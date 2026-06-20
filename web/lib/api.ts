@@ -7,8 +7,7 @@ import {
   PortfolioResponse,
 } from "./types";
 
-const BASE =
-  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "http://127.0.0.1:8011";
+const BASE = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "";
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   let res: Response;
