@@ -15,6 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0"]
 phase3 = ["alpaca-py>=0.30.0"]
+api = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -24,4 +25,4 @@ testpaths = ["tests"]
 py-modules = ["config", "factors", "scorer", "backtest", "logger", "run_daily"]
 
 [tool.setuptools.packages.find]
-include = ["data*"]
+include = ["data*", "api*"]
