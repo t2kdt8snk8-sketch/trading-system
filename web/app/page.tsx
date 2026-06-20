@@ -41,7 +41,7 @@ export default function Home() {
       <header className="sticky top-0 z-40 border-b border-line/60 bg-bg/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-brand-deep text-[#04150e] shadow-glow">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-brand-deep text-[#04222a] shadow-glow">
               <IconChart className="h-5 w-5" strokeWidth={2.2} />
             </div>
             <div className="leading-tight">

@@ -41,7 +41,7 @@ export function RunButton({
     >
       {loading ? (
         <>
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#04150e]/40 border-t-[#04150e]" />
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#04222a]/40 border-t-[#04222a]" />
           실행 중…
         </>
       ) : (
@@ -246,7 +246,7 @@ export function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
             value === o.value
-              ? "bg-brand text-[#04150e]"
+              ? "bg-brand text-[#04222a]"
               : "text-muted hover:text-fg"
           }`}
         >
