@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { BacktestResponse } from "@/lib/types";
 import { pct, signedPct, num } from "@/lib/format";
@@ -32,6 +32,29 @@ export function BacktestView({ settings }: { settings: Settings }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [data, setData] = useState<BacktestResponse | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const resume = api.resumeBacktest();
+    if (!resume) return;
+
+    setLoading(true);
+    setError(null);
+    resume
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const run = async () => {
     setLoading(true);

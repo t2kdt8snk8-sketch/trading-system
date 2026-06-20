@@ -49,7 +49,15 @@ function extractMessage(detail: unknown): string | null {
 }
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`);
+  } catch (e) {
+    throw new ApiError(
+      `API 서버에 연결하지 못했습니다 (${BASE}). 네트워크가 잠깐 끊겼습니다.`,
+      String(e),
+    );
+  }
   if (!res.ok) throw new ApiError(`요청 실패 (HTTP ${res.status})`, null);
   return (await res.json()) as T;
 }
@@ -65,6 +73,52 @@ interface JobResponse<T> {
   error?: unknown;
 }
 
+const ACTIVE_BACKTEST_JOB_KEY = "trading-system.activeBacktestJobId";
+
+function saveActiveBacktestJob(jobId: string): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(ACTIVE_BACKTEST_JOB_KEY, jobId);
+  }
+}
+
+function clearActiveBacktestJob(jobId?: string): void {
+  if (typeof window === "undefined") return;
+  if (!jobId || window.localStorage.getItem(ACTIVE_BACKTEST_JOB_KEY) === jobId) {
+    window.localStorage.removeItem(ACTIVE_BACKTEST_JOB_KEY);
+  }
+}
+
+function getActiveBacktestJob(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(ACTIVE_BACKTEST_JOB_KEY);
+}
+
+async function pollBacktestJob(jobId: string): Promise<BacktestResponse> {
+  let transientFailures = 0;
+  for (let i = 0; i < 360; i += 1) {
+    await sleep(1500);
+    try {
+      const job = await get<JobResponse<BacktestResponse>>(`/api/jobs/${jobId}`);
+      transientFailures = 0;
+      if (job.status === "done" && job.result) {
+        clearActiveBacktestJob(jobId);
+        return job.result;
+      }
+      if (job.status === "error") {
+        clearActiveBacktestJob(jobId);
+        const msg = extractMessage(job.error) || "백테스트 작업 실패";
+        throw new ApiError(msg, job.error);
+      }
+    } catch (e) {
+      if (e instanceof ApiError && typeof e.detail !== "string") throw e;
+      transientFailures += 1;
+      if (transientFailures >= 40) throw e;
+    }
+  }
+
+  throw new ApiError("백테스트 시간이 너무 오래 걸립니다. 잠시 뒤 다시 시도하세요.", null);
+}
+
 async function runBacktestJob(o: RunOptions): Promise<BacktestResponse> {
   const started = await post<{ job_id: string }>("/api/backtest/jobs", {
     config: o.config,
@@ -73,18 +127,8 @@ async function runBacktestJob(o: RunOptions): Promise<BacktestResponse> {
     start: o.start,
     end: o.end,
   });
-
-  for (let i = 0; i < 240; i += 1) {
-    await sleep(1500);
-    const job = await get<JobResponse<BacktestResponse>>(`/api/jobs/${started.job_id}`);
-    if (job.status === "done" && job.result) return job.result;
-    if (job.status === "error") {
-      const msg = extractMessage(job.error) || "백테스트 작업 실패";
-      throw new ApiError(msg, job.error);
-    }
-  }
-
-  throw new ApiError("백테스트 시간이 너무 오래 걸립니다. 잠시 뒤 다시 시도하세요.", null);
+  saveActiveBacktestJob(started.job_id);
+  return pollBacktestJob(started.job_id);
 }
 
 export interface RunOptions {
@@ -105,6 +149,10 @@ export const api = {
       max_tickers: o.max_tickers,
     }),
   backtest: (o: RunOptions) => runBacktestJob(o),
+  resumeBacktest: () => {
+    const jobId = getActiveBacktestJob();
+    return jobId ? pollBacktestJob(jobId) : null;
+  },
   compare: (o: RunOptions & { variants: Record<string, unknown>[] }) =>
     post<CompareResponse>("/api/compare", {
       config: o.config,
