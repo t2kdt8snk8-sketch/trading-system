@@ -105,11 +105,17 @@ export default function Home() {
         />
       </div>
 
-      {/* Content */}
+      {/* Content: keep every tab mounted so in-flight requests/results survive tab switches. */}
       <main className="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-7">
-        {tab === "portfolio" && <PortfolioView settings={settings} />}
-        {tab === "backtest" && <BacktestView settings={settings} />}
-        {tab === "compare" && <CompareOosView settings={settings} />}
+        <section hidden={tab !== "portfolio"} aria-hidden={tab !== "portfolio"}>
+          <PortfolioView settings={settings} />
+        </section>
+        <section hidden={tab !== "backtest"} aria-hidden={tab !== "backtest"}>
+          <BacktestView settings={settings} />
+        </section>
+        <section hidden={tab !== "compare"} aria-hidden={tab !== "compare"}>
+          <CompareOosView settings={settings} />
+        </section>
 
         <footer className="mt-12 border-t border-line/60 pt-5 text-xs leading-relaxed text-faint">
           데이터 출처: yfinance · Wikipedia GICS · 백테스트 통과는 페이퍼 테스트
