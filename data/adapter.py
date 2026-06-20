@@ -3,12 +3,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+from io import StringIO
 from pathlib import Path
 from typing import Any
+from urllib.request import Request, urlopen
 
 import pandas as pd
 
 SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "Chrome/125.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
 OHLC_FIELDS = ("Open", "High", "Low", "Close", "Volume")
 
 
@@ -21,11 +30,19 @@ def _cache_key(tickers: list[str], start: str, end: str, kind: str) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def _read_html_with_headers(url: str) -> list[pd.DataFrame]:
+    """Read an HTML table using browser-like headers to avoid bot 403s."""
+    req = Request(url, headers=HTTP_HEADERS)
+    with urlopen(req, timeout=30) as resp:
+        html = resp.read().decode("utf-8", errors="replace")
+    return pd.read_html(StringIO(html))
+
+
 def get_universe(source: str = "SP500") -> pd.DataFrame:
     """Return universe DataFrame with columns ['ticker', 'sector']."""
     if source.upper() != "SP500":
         raise ValueError(f"unsupported universe: {source}")
-    table = pd.read_html(SP500_URL)[0]
+    table = _read_html_with_headers(SP500_URL)[0]
     symbol_col = next((col for col in table.columns if str(col).lower() == "symbol"), None)
     sector_col = next((col for col in table.columns if "sector" in str(col).lower()), None)
     if symbol_col is None or sector_col is None:

@@ -41,7 +41,7 @@ def test_cache_hit_skips_download(monkeypatch, tmp_path) -> None:
 
 def test_get_universe_parses_symbol_and_sector(monkeypatch) -> None:
     fake = pd.DataFrame({"Symbol": ["BRK.B", "AAPL"], "GICS Sector": ["Financials", "Information Technology"]})
-    monkeypatch.setattr(pd, "read_html", lambda url: [fake])
+    monkeypatch.setattr(adapter, "_read_html_with_headers", lambda url: [fake])
     universe = adapter.get_universe()
     assert list(universe.columns) == ["ticker", "sector"]
     assert universe.loc[0, "ticker"] == "BRK-B"
