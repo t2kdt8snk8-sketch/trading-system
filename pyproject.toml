@@ -1,0 +1,27 @@
+[project]
+name = "trading-system"
+version = "0.1.0"
+description = "AI-assisted stock scoring and backtesting system"
+requires-python = ">=3.11"
+dependencies = [
+  "pandas>=2.2.0",
+  "numpy>=1.26.0",
+  "yfinance>=0.2.40",
+  "lxml>=5.0.0",
+  "matplotlib>=3.8.0",
+  "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+phase3 = ["alpaca-py>=0.30.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.setuptools]
+py-modules = ["config", "factors", "scorer", "backtest", "logger", "run_daily"]
+
+[tool.setuptools.packages.find]
+include = ["data*"]
