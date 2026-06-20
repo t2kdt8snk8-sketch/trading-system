@@ -17,6 +17,7 @@ import {
   ViewHeader,
 } from "./ui";
 import { GateVerdict } from "./GateVerdict";
+import { SignedHBars, GroupedBars } from "./charts";
 import { IconScale } from "./icons";
 
 const AXES: Record<
@@ -123,6 +124,15 @@ function CompareSection({ settings }: { settings: Settings }) {
       {data && !loading && (
         <div className="animate-fade-up space-y-4">
           <DemoBanner meta={data.meta} />
+          <Card>
+            <div className="card-title mb-3">버전별 초과수익 (vs SPY)</div>
+            <SignedHBars
+              data={data.variants.map((v, i) => ({
+                label: labels[i] ?? `v${i}`,
+                value: (v.excess_cagr as number) ?? 0,
+              }))}
+            />
+          </Card>
           <Card className="!p-0">
             <div className="overflow-auto">
               <table className="w-full">
@@ -239,6 +249,42 @@ function OosSection({ settings }: { settings: Settings }) {
               m={data.oos}
             />
           </div>
+
+          <Card>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="card-title">개발 vs OOS · 성과 비교</div>
+              <div className="flex items-center gap-3 text-[11px] text-muted">
+                <span className="flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-brand" />개발
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-violet" />OOS
+                </span>
+              </div>
+            </div>
+            <GroupedBars
+              data={[
+                {
+                  metric: "CAGR",
+                  dev: data.development.cagr ?? 0,
+                  oos: data.oos.cagr ?? 0,
+                },
+                {
+                  metric: "초과수익",
+                  dev: data.development.excess_cagr ?? 0,
+                  oos: data.oos.excess_cagr ?? 0,
+                },
+                {
+                  metric: "샤프",
+                  dev: data.development.sharpe ?? 0,
+                  oos: data.oos.sharpe ?? 0,
+                },
+              ]}
+            />
+            <p className="mt-2 text-[11px] text-faint">
+              개발 기간 대비 OOS에서 성과가 크게 꺾이면 과최적화 신호입니다.
+            </p>
+          </Card>
 
           <GateVerdict
             checks={data.oos_checks}

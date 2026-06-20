@@ -6,6 +6,7 @@ import {
   Bar,
   BarChart,
   Cell,
+  LabelList,
   Line,
   Pie,
   PieChart,
@@ -376,6 +377,139 @@ export function SectorDonut({
           formatter={(v: number, n: string) => [`${(v * 100).toFixed(1)}%`, n]}
         />
       </PieChart>
+    </ResponsiveContainer>
+  );
+}
+
+/* ── Horizontal ranking bars (e.g. holdings by weight) ───────────────── */
+export function HBars({
+  data,
+  height,
+}: {
+  data: { label: string; value: number }[];
+  height?: number;
+}) {
+  const max = Math.max(...data.map((d) => d.value), 1e-6);
+  return (
+    <ResponsiveContainer width="100%" height={height ?? data.length * 26 + 8}>
+      <BarChart
+        data={data}
+        layout="vertical"
+        margin={{ top: 0, right: 40, bottom: 0, left: 6 }}
+      >
+        <XAxis type="number" hide domain={[0, max * 1.15]} />
+        <YAxis
+          type="category"
+          dataKey="label"
+          width={56}
+          tick={{ fill: "#cbd3df", fontSize: 12 }}
+          tickLine={false}
+          axisLine={false}
+        />
+        <Tooltip
+          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          contentStyle={tooltipStyle}
+          formatter={(v: number) => [`${(v * 100).toFixed(2)}%`, "비중"]}
+        />
+        <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={C.brand} barSize={13}>
+          <LabelList
+            dataKey="value"
+            position="right"
+            formatter={(v: number) => `${(v * 100).toFixed(1)}%`}
+            style={{ fill: "#94a0b0", fontSize: 11 }}
+          />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/* ── Signed horizontal bars (e.g. excess return per variant) ─────────── */
+export function SignedHBars({
+  data,
+  height,
+}: {
+  data: { label: string; value: number }[];
+  height?: number;
+}) {
+  const span = Math.max(...data.map((d) => Math.abs(d.value)), 1e-6) * 1.25;
+  return (
+    <ResponsiveContainer width="100%" height={height ?? data.length * 34 + 16}>
+      <BarChart
+        data={data}
+        layout="vertical"
+        margin={{ top: 0, right: 16, bottom: 0, left: 6 }}
+      >
+        <XAxis type="number" hide domain={[-span, span]} />
+        <YAxis
+          type="category"
+          dataKey="label"
+          width={68}
+          tick={{ fill: "#cbd3df", fontSize: 12 }}
+          tickLine={false}
+          axisLine={false}
+        />
+        <Tooltip
+          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          contentStyle={tooltipStyle}
+          formatter={(v: number) => [
+            `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%`,
+            "초과수익",
+          ]}
+        />
+        <ReferenceLine x={0} stroke={C.grid} />
+        <Bar dataKey="value" radius={[3, 3, 3, 3]} barSize={16}>
+          {data.map((d, i) => (
+            <Cell key={i} fill={d.value >= 0 ? C.up : C.down} />
+          ))}
+          <LabelList
+            dataKey="value"
+            position="right"
+            formatter={(v: number) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`}
+            style={{ fill: "#94a0b0", fontSize: 11 }}
+          />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/* ── Grouped two-series bars (e.g. development vs OOS) ────────────────── */
+export function GroupedBars({
+  data,
+  height = 200,
+}: {
+  data: { metric: string; dev: number; oos: number }[];
+  height?: number;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -12 }}>
+        <XAxis
+          dataKey="metric"
+          tick={{ fill: C.axis, fontSize: 11 }}
+          tickLine={false}
+          axisLine={{ stroke: C.grid }}
+        />
+        <YAxis
+          tick={{ fill: C.axis, fontSize: 10 }}
+          tickLine={false}
+          axisLine={false}
+          width={40}
+          tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`}
+        />
+        <Tooltip
+          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          contentStyle={tooltipStyle}
+          formatter={(v: number, n: string) => [
+            `${(v * 100).toFixed(1)}%`,
+            n === "dev" ? "개발" : "OOS",
+          ]}
+        />
+        <ReferenceLine y={0} stroke={C.grid} />
+        <Bar dataKey="dev" name="dev" fill={C.brand} radius={[3, 3, 0, 0]} />
+        <Bar dataKey="oos" name="oos" fill={C.violet} radius={[3, 3, 0, 0]} />
+      </BarChart>
     </ResponsiveContainer>
   );
 }
