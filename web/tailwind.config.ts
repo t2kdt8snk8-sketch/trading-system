@@ -1,27 +1,68 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  content: [
-    "./app/**/*.{ts,tsx}",
-    "./components/**/*.{ts,tsx}",
-  ],
+  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        ink: {
-          900: "#0b0e14",
-          800: "#11151f",
-          700: "#1a2030",
-          600: "#252d42",
-          500: "#3a4259",
-        },
-        accent: "#5b8cff",
-        good: "#1faa6b",
-        bad: "#e5484d",
-        warn: "#f5a524",
+        // Neutral surfaces (warm-black, distinct from the old navy "ink")
+        bg: "#0a0c10",
+        surface: "#12151b",
+        surface2: "#1a1e26",
+        line: "#232a35",
+        // Brand + semantics: trading-green primary
+        brand: { DEFAULT: "#34d399", deep: "#10b981" },
+        up: "#34d399",
+        down: "#fb7185",
+        warn: "#fbbf24",
+        info: "#60a5fa",
+        violet: "#a78bfa",
+        // Text
+        fg: "#e7ecf3",
+        muted: "#94a0b0",
+        faint: "#5c6675",
       },
       fontFamily: {
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        sans: [
+          "Inter",
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "Roboto",
+          "Apple SD Gothic Neo",
+          "Noto Sans KR",
+          "sans-serif",
+        ],
+        mono: [
+          "JetBrains Mono",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "monospace",
+        ],
+      },
+      borderRadius: {
+        xl: "0.875rem",
+        "2xl": "1.125rem",
+      },
+      boxShadow: {
+        card: "0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6)",
+        glow: "0 0 0 1px rgba(52,211,153,0.25), 0 8px 30px -8px rgba(52,211,153,0.35)",
+      },
+      keyframes: {
+        "fade-up": {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "sheet-up": {
+          from: { transform: "translateY(100%)" },
+          to: { transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        "fade-up": "fade-up 0.3s ease both",
+        "sheet-up": "sheet-up 0.28s cubic-bezier(0.16,1,0.3,1) both",
       },
     },
   },

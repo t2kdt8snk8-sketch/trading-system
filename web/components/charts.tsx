@@ -1,9 +1,10 @@
 "use client";
 
 import {
+  Area,
+  AreaChart,
   Cell,
   Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -14,10 +15,18 @@ import {
 import { CurvePoint, SectorWeight } from "@/lib/types";
 
 const SECTOR_COLORS = [
-  "#5b8cff", "#1faa6b", "#f5a524", "#e5484d", "#a06bff",
-  "#22b8cf", "#f06595", "#94d82d", "#ff922b", "#748ffc",
-  "#4cd0c0",
+  "#34d399", "#60a5fa", "#fbbf24", "#fb7185", "#a78bfa",
+  "#22d3ee", "#f472b6", "#a3e635", "#fb923c", "#818cf8",
+  "#2dd4bf",
 ];
+
+const tooltipStyle = {
+  background: "#12151b",
+  border: "1px solid #232a35",
+  borderRadius: 12,
+  fontSize: 12,
+  boxShadow: "0 8px 24px -12px rgba(0,0,0,0.7)",
+};
 
 export function EquityChart({
   strategy,
@@ -34,46 +43,55 @@ export function EquityChart({
   }));
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: -8 }}>
+      <AreaChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -10 }}>
+        <defs>
+          <linearGradient id="stratFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#34d399" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
+          </linearGradient>
+        </defs>
         <XAxis
           dataKey="date"
-          tick={{ fill: "#7c8499", fontSize: 11 }}
-          minTickGap={48}
+          tick={{ fill: "#5c6675", fontSize: 11 }}
+          tickLine={false}
+          axisLine={{ stroke: "#232a35" }}
+          minTickGap={44}
           tickFormatter={(d: string) => d.slice(0, 7)}
         />
         <YAxis
-          tick={{ fill: "#7c8499", fontSize: 11 }}
-          width={48}
+          tick={{ fill: "#5c6675", fontSize: 11 }}
+          tickLine={false}
+          axisLine={false}
+          width={44}
           tickFormatter={(v: number) => `${v.toFixed(1)}x`}
         />
         <Tooltip
-          contentStyle={{
-            background: "#11151f",
-            border: "1px solid #252d42",
-            borderRadius: 8,
-            fontSize: 12,
-          }}
-          labelStyle={{ color: "#a8b0c0" }}
-          formatter={(v: number) => (v == null ? "—" : `${v.toFixed(3)}x`)}
+          contentStyle={tooltipStyle}
+          labelStyle={{ color: "#94a0b0", marginBottom: 4 }}
+          formatter={(v: number, n: string) => [
+            v == null ? "—" : `${v.toFixed(3)}x`,
+            n === "strategy" ? "전략" : "SPY",
+          ]}
         />
-        <Line
+        <Area
           type="monotone"
           dataKey="strategy"
-          name="전략"
-          stroke="#5b8cff"
-          strokeWidth={2}
+          name="strategy"
+          stroke="#34d399"
+          strokeWidth={2.4}
+          fill="url(#stratFill)"
           dot={false}
         />
         <Line
           type="monotone"
           dataKey="benchmark"
-          name="SPY"
-          stroke="#8b93a7"
+          name="benchmark"
+          stroke="#6b7686"
           strokeWidth={1.5}
-          strokeDasharray="4 3"
+          strokeDasharray="4 4"
           dot={false}
         />
-      </LineChart>
+      </AreaChart>
     </ResponsiveContainer>
   );
 }
@@ -81,28 +99,24 @@ export function EquityChart({
 export function SectorDonut({ data }: { data: SectorWeight[] }) {
   const clean = data.filter((d) => d.weight && d.weight > 0);
   return (
-    <ResponsiveContainer width="100%" height={240}>
+    <ResponsiveContainer width="100%" height={220}>
       <PieChart>
         <Pie
           data={clean}
           dataKey="weight"
           nameKey="sector"
-          innerRadius={55}
-          outerRadius={90}
+          innerRadius={58}
+          outerRadius={92}
           paddingAngle={2}
-          stroke="#0b0e14"
+          stroke="#0a0c10"
+          strokeWidth={2}
         >
           {clean.map((_, i) => (
             <Cell key={i} fill={SECTOR_COLORS[i % SECTOR_COLORS.length]} />
           ))}
         </Pie>
         <Tooltip
-          contentStyle={{
-            background: "#11151f",
-            border: "1px solid #252d42",
-            borderRadius: 8,
-            fontSize: 12,
-          }}
+          contentStyle={tooltipStyle}
           formatter={(v: number, n: string) => [`${(v * 100).toFixed(1)}%`, n]}
         />
       </PieChart>
