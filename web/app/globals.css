@@ -1,56 +1,102 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
   color-scheme: dark;
+  --bg: #0a0c10;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
 body {
-  background: #0b0e14;
-  color: #e6e9f0;
+  background:
+    radial-gradient(1200px 700px at 100% -10%, rgba(52, 211, 153, 0.06), transparent 60%),
+    radial-gradient(900px 600px at -10% 0%, rgba(96, 165, 250, 0.05), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+  color: #e7ecf3;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  font-family: theme("fontFamily.sans");
+  min-height: 100dvh;
+}
+
+/* Tabular numerals everywhere numbers matter */
+.nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Thin custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a323d;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 @layer components {
   .card {
-    @apply rounded-xl border border-ink-600/70 bg-ink-800 p-5 shadow-lg shadow-black/20;
+    @apply rounded-2xl border border-line/70 bg-surface/80 shadow-card backdrop-blur-sm;
+  }
+  .card-pad {
+    @apply p-4 sm:p-5;
   }
   .card-title {
-    @apply text-sm font-semibold uppercase tracking-wider text-slate-400;
+    @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-faint;
   }
+
+  /* Buttons */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply bg-accent text-white hover:brightness-110;
+    @apply bg-gradient-to-b from-brand to-brand-deep text-[#04150e] shadow-glow hover:brightness-105;
   }
   .btn-ghost {
-    @apply border border-ink-500 bg-ink-700 text-slate-200 hover:bg-ink-600;
+    @apply border border-line bg-surface2 text-fg hover:border-faint hover:bg-surface2/70;
   }
+  .btn-icon {
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-surface2 text-muted transition hover:text-fg active:scale-95;
+  }
+
+  /* Inputs */
   .input,
   .select {
-    @apply w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-accent;
+    @apply w-full rounded-xl border border-line bg-surface2 px-3 py-2.5 text-sm text-fg outline-none transition placeholder:text-faint focus:border-brand/70 focus:ring-2 focus:ring-brand/15;
   }
   .label {
-    @apply mb-1 block text-xs font-medium text-slate-400;
+    @apply mb-1.5 block text-xs font-medium text-muted;
   }
+
+  /* Bits */
   .pill {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold;
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold;
   }
   .stat-value {
-    @apply font-mono text-2xl font-semibold tabular-nums;
+    @apply nums text-2xl font-bold leading-none sm:text-[1.7rem];
   }
   .th {
-    @apply px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400;
+    @apply whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-faint;
   }
   .td {
-    @apply px-3 py-2 text-sm tabular-nums;
+    @apply nums px-3 py-2.5 text-sm;
+  }
+  .divider {
+    @apply h-px w-full bg-line/70;
   }
 }
