@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { BacktestResponse } from "@/lib/types";
 import { pct, signedPct, num } from "@/lib/format";
+import { recoveryFactor, longestDrawdownDays } from "@/lib/metrics";
 import { Settings } from "./ConfigBar";
 import {
   Card,
@@ -16,7 +17,14 @@ import {
   Stat,
   ViewHeader,
 } from "./ui";
-import { EquityChart } from "./charts";
+import {
+  CumulativeChart,
+  DrawdownChart,
+  MonthlyReturnsBars,
+  RebalanceBars,
+  RiskRadar,
+  GaugeRing,
+} from "./charts";
 import { GateVerdict } from "./GateVerdict";
 import { IconAlert, IconChart } from "./icons";
 
@@ -46,12 +54,14 @@ export function BacktestView({ settings }: { settings: Settings }) {
   };
 
   const m = data?.metrics;
-  const allPass = data?.gate_checks.every((c) => c.pass) ?? false;
+  const checks = data?.gate_checks ?? [];
+  const passCount = checks.filter((c) => c.pass).length;
+  const allPass = checks.length > 0 && passCount === checks.length;
 
   return (
     <div className="space-y-4">
       <ViewHeader
-        title="정직한 백테스트"
+        title="백테스트 · 성과 리포트"
         subtitle="월 1회 리밸런싱 · 비용 차감 · 룩어헤드 차단(체결=다음날 시가). 이 시스템의 생명선입니다."
         action={
           <RunButton onClick={run} loading={loading}>
@@ -70,133 +80,233 @@ export function BacktestView({ settings }: { settings: Settings }) {
       {!data && !loading && !error && (
         <EmptyState
           icon={<IconChart className="h-6 w-6" />}
-          text="‘백테스트 실행’을 누르면 전략 vs SPY 자산곡선과 합격/불합격 게이트가 여기에 표시됩니다."
+          text="‘백테스트 실행’을 누르면 누적 성과·낙폭·월수익·게이트가 한 화면에 표시됩니다."
         />
       )}
 
-      {data && m && !loading && (
-        <div className="animate-fade-up space-y-4">
-          <DemoBanner meta={data.meta} />
+      {data && m && !loading && <Tearsheet data={data} />}
+    </div>
+  );
+}
 
-          {/* KPI strip — at-a-glance numbers up top */}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <Stat
-              label="CAGR (연복리)"
-              value={pct(m.cagr)}
-              sub={`SPY ${pct(m.benchmark_cagr)}`}
-            />
-            <Stat
-              label="초과수익 vs SPY"
-              value={signedPct(m.excess_cagr)}
-              tone={(m.excess_cagr ?? 0) > 0 ? "good" : "bad"}
-            />
-            <Stat
-              label="샤프"
-              value={num(m.sharpe)}
-              sub={`SPY ${num(m.benchmark_sharpe)}`}
-            />
-            <Stat
-              label="변동성"
-              value={pct(m.volatility)}
-              sub={`SPY ${pct(m.benchmark_volatility)}`}
-            />
-            <Stat
-              label="최대낙폭 MDD"
-              value={pct(m.mdd)}
-              tone="bad"
-              sub={`SPY ${pct(m.benchmark_mdd)}`}
-            />
-            <Stat label="평균 회전율" value={pct(m.avg_turnover)} />
+function Tearsheet({ data }: { data: BacktestResponse }) {
+  const m = data.metrics;
+  const checks = data.gate_checks;
+  const passCount = checks.filter((c) => c.pass).length;
+  const allPass = checks.length > 0 && passCount === checks.length;
+
+  const recovery = recoveryFactor(data.equity_curve, m.mdd);
+  const longestDD = longestDrawdownDays(data.equity_curve);
+
+  const rebalData = data.recent_trades.map((t) => ({
+    date: t.rebalance_date,
+    net: t.net_return,
+  }));
+
+  // Radar: strategy vs SPY, normalized so the better side ≈ 1.0 per axis.
+  const hb = (a?: number | null, b?: number | null) => {
+    const x = a ?? 0,
+      y = b ?? 0;
+    const d = Math.max(x, y, 1e-9);
+    return [Math.max(0, x / d), Math.max(0, y / d)] as const;
+  };
+  const lb = (a?: number | null, b?: number | null) => {
+    const x = Math.abs(a ?? 0),
+      y = Math.abs(b ?? 0);
+    const best = Math.min(x, y) || 1e-9;
+    return [best / (x || 1e-9), best / (y || 1e-9)] as const;
+  };
+  const [cagrS, cagrB] = hb(m.cagr, m.benchmark_cagr);
+  const [shS, shB] = hb(m.sharpe, m.benchmark_sharpe);
+  const [mddS, mddB] = lb(m.mdd, m.benchmark_mdd);
+  const [volS, volB] = lb(m.volatility, m.benchmark_volatility);
+  const radarAxes = [
+    { metric: "수익", strat: cagrS, bench: cagrB },
+    { metric: "샤프", strat: shS, bench: shB },
+    { metric: "방어", strat: mddS, bench: mddB },
+    { metric: "안정", strat: volS, bench: volB },
+  ];
+
+  return (
+    <div className="animate-fade-up space-y-4">
+      <DemoBanner meta={data.meta} />
+
+      {/* KPI band — above the fold, Z-pattern left→right */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <Stat
+          label="CAGR (연복리)"
+          value={pct(m.cagr)}
+          sub={`SPY ${pct(m.benchmark_cagr)}`}
+        />
+        <Stat
+          label="초과수익 vs SPY"
+          value={signedPct(m.excess_cagr)}
+          tone={(m.excess_cagr ?? 0) > 0 ? "good" : "bad"}
+        />
+        <Stat
+          label="샤프"
+          value={num(m.sharpe)}
+          sub={`SPY ${num(m.benchmark_sharpe)}`}
+        />
+        <Stat
+          label="변동성"
+          value={pct(m.volatility)}
+          sub={`SPY ${pct(m.benchmark_volatility)}`}
+        />
+        <Stat
+          label="최대낙폭 MDD"
+          value={pct(m.mdd)}
+          tone="bad"
+          sub={`SPY ${pct(m.benchmark_mdd)}`}
+        />
+        <Stat label="평균 회전율" value={pct(m.avg_turnover)} />
+      </div>
+
+      {/* Hero: cumulative performance + underwater drawdown, shared axis */}
+      <Card>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <div className="card-title">누적 성과 · 전략 vs SPY</div>
+          <div className="flex items-center gap-4 text-xs">
+            <span className="flex items-center gap-1.5 text-muted">
+              <span className="h-2.5 w-2.5 rounded-full bg-brand" /> 전략
+            </span>
+            <span className="flex items-center gap-1.5 text-muted">
+              <span className="h-0.5 w-3 bg-bench" /> SPY
+            </span>
+            <span className="text-faint">
+              {data.period.start} ~ {data.period.end}
+            </span>
           </div>
-
-          {/* Equity curve — the hero chart */}
-          <Card>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="card-title">자산곡선 (전략 vs SPY)</div>
-              <div className="flex items-center gap-4 text-xs">
-                <span className="flex items-center gap-1.5 text-muted">
-                  <span className="h-2.5 w-2.5 rounded-full bg-brand" /> 전략
-                </span>
-                <span className="flex items-center gap-1.5 text-muted">
-                  <span className="h-0.5 w-3 bg-faint" /> SPY
-                </span>
-                <span className="text-faint">
-                  {data.period.start} ~ {data.period.end}
-                </span>
-              </div>
-            </div>
-            <EquityChart
-              strategy={data.equity_curve}
-              benchmark={data.benchmark_curve}
-            />
-          </Card>
-
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <GateVerdict checks={data.gate_checks} passed={allPass} />
-            </div>
-            <div className="flex flex-col gap-2 rounded-2xl border border-warn/30 bg-warn/[0.06] p-4">
-              <div className="card-title flex items-center gap-1.5 text-warn">
-                <IconAlert className="h-4 w-4" /> 생존편향 한계
-              </div>
-              <p className="text-xs leading-relaxed text-muted">
-                현재 S&P500 구성종목만 사용 → 망한 회사가 빠져 있어 결과가{" "}
-                <b className="text-fg">실제보다 좋게</b> 나옵니다. SPY 대비
-                초과수익도 부풀려질 수 있어요. 숫자를 그대로 믿지 말 것.
-              </p>
-            </div>
-          </div>
-
-          <Card>
-            <div className="card-title mb-3">최근 리밸런싱 (비용 투명화)</div>
-            <div className="-mx-1 overflow-auto">
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th className="th">리밸일</th>
-                    <th className="th text-right">총수익</th>
-                    <th className="th text-right">비용</th>
-                    <th className="th text-right">순수익</th>
-                    <th className="th text-right">회전율</th>
-                    <th className="th text-right">종목수</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.recent_trades.map((t) => (
-                    <tr
-                      key={t.rebalance_date}
-                      className="border-t border-line/50"
-                    >
-                      <td className="td text-muted">{t.rebalance_date}</td>
-                      <td className="td text-right">
-                        {signedPct(t.gross_return)}
-                      </td>
-                      <td className="td text-right text-down">
-                        −{pct(t.cost, 2)}
-                      </td>
-                      <td
-                        className={`td text-right font-semibold ${
-                          t.net_return >= 0 ? "text-up" : "text-down"
-                        }`}
-                      >
-                        {signedPct(t.net_return)}
-                      </td>
-                      <td className="td text-right text-muted">
-                        {pct(t.turnover)}
-                      </td>
-                      <td className="td text-right text-muted">
-                        {t.n_holdings}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-
-          <DataQuality meta={data.meta} />
         </div>
-      )}
+        <CumulativeChart
+          strategy={data.equity_curve}
+          benchmark={data.benchmark_curve}
+        />
+        <div className="mb-1 mt-2 text-[11px] font-semibold uppercase tracking-wider text-faint">
+          낙폭 (Underwater)
+        </div>
+        <DrawdownChart strategy={data.equity_curve} />
+        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 border-t border-line/60 pt-3 text-xs text-muted">
+          <span>
+            최대 낙폭 <b className="text-down">{pct(m.mdd)}</b>
+          </span>
+          <span>
+            최장 낙폭 구간{" "}
+            <b className="text-fg">{longestDD != null ? `${longestDD}일` : "—"}</b>
+          </span>
+          <span>
+            회복계수{" "}
+            <b className="text-fg">{recovery != null ? num(recovery) : "—"}</b>
+          </span>
+        </div>
+      </Card>
+
+      {/* Analytics row: radar · monthly · rebalance P&L */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <div className="mb-2 flex items-center justify-between">
+            <div className="card-title">위험·수익 프로파일</div>
+            <div className="flex items-center gap-3 text-[11px] text-muted">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-brand" />전략
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-bench" />SPY
+              </span>
+            </div>
+          </div>
+          <RiskRadar axes={radarAxes} />
+        </Card>
+
+        <Card>
+          <div className="card-title mb-2">월별 수익률</div>
+          <MonthlyReturnsBars strategy={data.equity_curve} height={200} />
+        </Card>
+
+        <Card>
+          <div className="card-title mb-2">리밸런싱별 순수익</div>
+          <RebalanceBars data={rebalData} height={200} />
+        </Card>
+      </div>
+
+      {/* Verdict row: gate gauge + checklist + survivorship caveat */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="flex flex-col items-center justify-center text-center">
+          <div className="card-title mb-1 self-start">게이트 판정</div>
+          <GaugeRing
+            value={checks.length ? passCount / checks.length : 0}
+            label={`${passCount}/${checks.length}`}
+            sublabel="기준 충족"
+            color={allPass ? "#34d399" : "#fb7185"}
+          />
+          <div
+            className={`text-lg font-extrabold ${
+              allPass ? "text-up" : "text-down"
+            }`}
+          >
+            {allPass ? "통과" : "불통과"}
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-faint">
+            통과해도 실거래 자격이 아니라 페이퍼 테스트 허들입니다.
+          </p>
+        </Card>
+
+        <div className="lg:col-span-2">
+          <GateVerdict checks={checks} passed={allPass} />
+        </div>
+      </div>
+
+      {/* Survivorship caveat */}
+      <div className="flex items-start gap-3 rounded-2xl border border-warn/30 bg-warn/[0.06] p-4">
+        <IconAlert className="mt-0.5 h-5 w-5 shrink-0 text-warn" />
+        <p className="text-xs leading-relaxed text-muted">
+          <b className="text-warn">생존편향 한계</b> · 현재 S&P500 구성종목만 사용
+          → 망한 회사가 빠져 있어 결과가 <b className="text-fg">실제보다 좋게</b>{" "}
+          나옵니다. SPY 대비 초과수익도 부풀려질 수 있어요. 숫자를 그대로 믿지 말
+          것.
+        </p>
+      </div>
+
+      {/* Detail: recent rebalances with cost transparency */}
+      <Card className="!p-0">
+        <div className="card-pad pb-2">
+          <div className="card-title">최근 리밸런싱 · 비용 투명화</div>
+        </div>
+        <div className="overflow-auto">
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className="th">리밸일</th>
+                <th className="th text-right">총수익</th>
+                <th className="th text-right">비용</th>
+                <th className="th text-right">순수익</th>
+                <th className="th text-right">회전율</th>
+                <th className="th text-right">종목수</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.recent_trades.map((t) => (
+                <tr key={t.rebalance_date} className="border-t border-line/50">
+                  <td className="td text-muted">{t.rebalance_date}</td>
+                  <td className="td text-right">{signedPct(t.gross_return)}</td>
+                  <td className="td text-right text-down">−{pct(t.cost, 2)}</td>
+                  <td
+                    className={`td text-right font-semibold ${
+                      t.net_return >= 0 ? "text-up" : "text-down"
+                    }`}
+                  >
+                    {signedPct(t.net_return)}
+                  </td>
+                  <td className="td text-right text-muted">{pct(t.turnover)}</td>
+                  <td className="td text-right text-muted">{t.n_holdings}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <DataQuality meta={data.meta} />
     </div>
   );
 }

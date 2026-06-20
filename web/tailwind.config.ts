@@ -10,8 +10,8 @@ const config: Config = {
         surface: "#12151b",
         surface2: "#1a1e26",
         line: "#232a35",
-        // Brand + semantics: trading-green primary
-        brand: { DEFAULT: "#34d399", deep: "#10b981" },
+        // Brand: cyan/teal. Semantics keep green=up / red=down (never recolored).
+        brand: { DEFAULT: "#22d3ee", deep: "#0891b2" },
         up: "#34d399",
         down: "#fb7185",
         warn: "#fbbf24",
@@ -48,7 +48,7 @@ const config: Config = {
       },
       boxShadow: {
         card: "0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6)",
-        glow: "0 0 0 1px rgba(52,211,153,0.25), 0 8px 30px -8px rgba(52,211,153,0.35)",
+        glow: "0 0 0 1px rgba(34,211,238,0.25), 0 8px 30px -8px rgba(34,211,238,0.4)",
       },
       keyframes: {
         "fade-up": {
