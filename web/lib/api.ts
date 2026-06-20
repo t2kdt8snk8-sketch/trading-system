@@ -54,6 +54,39 @@ async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface JobResponse<T> {
+  id: string;
+  status: "queued" | "running" | "done" | "error";
+  result?: T;
+  error?: unknown;
+}
+
+async function runBacktestJob(o: RunOptions): Promise<BacktestResponse> {
+  const started = await post<{ job_id: string }>("/api/backtest/jobs", {
+    config: o.config,
+    mode: o.mode,
+    max_tickers: o.max_tickers,
+    start: o.start,
+    end: o.end,
+  });
+
+  for (let i = 0; i < 240; i += 1) {
+    await sleep(1500);
+    const job = await get<JobResponse<BacktestResponse>>(`/api/jobs/${started.job_id}`);
+    if (job.status === "done" && job.result) return job.result;
+    if (job.status === "error") {
+      const msg = extractMessage(job.error) || "백테스트 작업 실패";
+      throw new ApiError(msg, job.error);
+    }
+  }
+
+  throw new ApiError("백테스트 시간이 너무 오래 걸립니다. 잠시 뒤 다시 시도하세요.", null);
+}
+
 export interface RunOptions {
   config?: Record<string, unknown>;
   mode: string;
@@ -71,14 +104,7 @@ export const api = {
       mode: o.mode,
       max_tickers: o.max_tickers,
     }),
-  backtest: (o: RunOptions) =>
-    post<BacktestResponse>("/api/backtest", {
-      config: o.config,
-      mode: o.mode,
-      max_tickers: o.max_tickers,
-      start: o.start,
-      end: o.end,
-    }),
+  backtest: (o: RunOptions) => runBacktestJob(o),
   compare: (o: RunOptions & { variants: Record<string, unknown>[] }) =>
     post<CompareResponse>("/api/compare", {
       config: o.config,
