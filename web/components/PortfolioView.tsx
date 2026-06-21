@@ -11,8 +11,10 @@ import {
   DemoBanner,
   EmptyState,
   ErrorBanner,
+  HintText,
   RunButton,
   Spinner,
+  SummaryCard,
   ViewHeader,
 } from "./ui";
 import { SectorDonut, SECTOR_COLORS } from "./charts";
@@ -74,12 +76,15 @@ export function PortfolioView({ settings }: { settings: Settings }) {
       {data && !loading && (
         <div className="animate-fade-up space-y-4">
           <DemoBanner meta={data.meta} />
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm text-muted">
-              기준일 <b className="text-fg">{data.as_of}</b>
-            </span>
-            <DataQuality meta={data.meta} />
-          </div>
+          <SummaryCard title="오늘의 종목 후보" verdict={`${data.holdings.length}종목`} tone="neutral">
+            점수 상위 종목을 고르고 비중을 계산한 결과입니다. 이건 매수 지시가 아니라{" "}
+            <HintText label="후보 리스트">
+              지금 규칙으로 보면 상대적으로 좋아 보이는 종목 목록입니다. 실제 매수 전에는
+              백테스트와 페이퍼 트레이딩 검증이 먼저 필요합니다.
+            </HintText>
+            입니다. 기준일은 <b>{data.as_of}</b>.
+          </SummaryCard>
+          <DataQuality meta={data.meta} />
 
           <div className="grid gap-4 lg:grid-cols-3">
             <Card className="lg:col-span-2">
@@ -106,7 +111,7 @@ export function PortfolioView({ settings }: { settings: Settings }) {
                         <td className="td text-faint">{i + 1}</td>
                         <td className="td font-semibold text-fg">{h.ticker}</td>
                         <td className="td text-muted">{h.sector ?? "—"}</td>
-                        <td className="td text-right text-muted">
+                        <td className="td text-right font-semibold text-fg">
                           {num(h.score)}
                         </td>
                         <td className="td text-right">
@@ -147,9 +152,9 @@ export function PortfolioView({ settings }: { settings: Settings }) {
                           background: SECTOR_COLORS[i % SECTOR_COLORS.length],
                         }}
                       />
-                      <span className="text-muted">{sw.sector}</span>
+                      <span className="font-semibold text-fg">{sw.sector}</span>
                     </span>
-                    <span className="nums font-mono text-muted">
+                    <span className="nums font-mono font-bold text-fg">
                       {pct(sw.weight)}
                     </span>
                   </div>

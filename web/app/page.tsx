@@ -36,7 +36,7 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <div className="min-h-[100dvh] pb-24 sm:pb-10">
+    <div className="min-h-[100svh] pb-28 sm:pb-10">
       {/* Sticky app bar */}
       <header className="sticky top-0 z-40 border-b border-line/60 bg-bg/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
@@ -124,8 +124,8 @@ export default function Home() {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line/60 bg-bg/90 backdrop-blur-xl sm:hidden">
-        <div className="mx-auto grid max-w-6xl grid-cols-3 pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed inset-x-0 bottom-0 z-50 translate-y-0 transform-gpu border-t border-line/60 bg-bg/95 shadow-[0_-12px_30px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:hidden">
+        <div className="mx-auto grid max-w-6xl grid-cols-3 pb-[max(env(safe-area-inset-bottom),0.5rem)]">
           {TABS.map((t) => {
             const active = tab === t.id;
             return (

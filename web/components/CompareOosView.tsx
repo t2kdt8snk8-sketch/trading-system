@@ -11,9 +11,11 @@ import {
   DemoBanner,
   EmptyState,
   ErrorBanner,
+  HintText,
   RunButton,
   Spinner,
   Stat,
+  SummaryCard,
   ViewHeader,
 } from "./ui";
 import { GateVerdict } from "./GateVerdict";
@@ -80,6 +82,15 @@ function CompareSection({ settings }: { settings: Settings }) {
     }
   };
 
+  const bestIndex = data
+    ? data.variants.reduce(
+        (best, v, i, arr) =>
+          (v.excess_cagr as number) > (arr[best].excess_cagr as number) ? i : best,
+        0,
+      )
+    : 0;
+  const bestLabel = labels[bestIndex] ?? `v${bestIndex}`;
+
   return (
     <div className="space-y-4">
       <ViewHeader
@@ -123,6 +134,15 @@ function CompareSection({ settings }: { settings: Settings }) {
       {data && !loading && (
         <div className="animate-fade-up space-y-4">
           <DemoBanner meta={data.meta} />
+          <SummaryCard title="버전 비교 결론" verdict={bestLabel} tone="neutral">
+            현재 비교에서는 <b>{bestLabel}</b>의 SPY 대비 초과수익이 가장 높습니다. 단, 이건{" "}
+            <HintText label="과최적화 주의">
+              과거에 제일 잘 맞는 설정을 계속 찾다 보면 미래에는 안 먹히는 꼼수가 될 수 있습니다.
+              비교는 2~3개 가설만 보는 용도로 쓰는 게 안전합니다.
+            </HintText>
+            입니다.
+          </SummaryCard>
+          <DataQuality meta={data.meta} />
           <Card className="!p-0">
             <div className="overflow-auto">
               <table className="w-full">
@@ -154,13 +174,13 @@ function CompareSection({ settings }: { settings: Settings }) {
                         {signedPct(v.excess_cagr as number)}
                       </td>
                       <td className="td text-right">{num(v.sharpe as number)}</td>
-                      <td className="td text-right text-muted">
+                      <td className="td text-right font-semibold text-fg">
                         {num(v.sharpe_delta as number)}
                       </td>
                       <td className="td text-right text-down">
                         {pct(v.mdd as number)}
                       </td>
-                      <td className="td text-right text-muted">
+                      <td className="td text-right font-semibold text-fg">
                         {pct(v.avg_turnover as number)}
                       </td>
                     </tr>
@@ -169,7 +189,6 @@ function CompareSection({ settings }: { settings: Settings }) {
               </table>
             </div>
           </Card>
-          <DataQuality meta={data.meta} />
         </div>
       )}
     </div>
@@ -223,7 +242,17 @@ function OosSection({ settings }: { settings: Settings }) {
       {data && !loading && (
         <div className="animate-fade-up space-y-4">
           <DemoBanner meta={data.meta} />
-          <div className="rounded-2xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-warn">
+          <SummaryCard
+            title="OOS 검증 결론"
+            verdict={data.passes_gate ? "통과" : "불통과"}
+            tone={data.passes_gate ? "good" : "bad"}
+          >
+            개발 기간에서 본 전략이 안 본 기간에서도 버텼는지 확인합니다. {" "}
+            <HintText label="OOS 설명">
+              한 번도 기준을 맞출 때 쓰지 않은 기간입니다. 여기서도 괜찮아야 과거에만 맞춘 전략일 가능성이 줄어듭니다.
+            </HintText>
+          </SummaryCard>
+          <div className="rounded-2xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm font-semibold text-warn">
             🔒 {data.oos_consumed_warning}
           </div>
 

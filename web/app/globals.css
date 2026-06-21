@@ -57,7 +57,16 @@ body {
     @apply p-4 sm:p-5;
   }
   .card-title {
-    @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-faint;
+    @apply text-sm font-extrabold tracking-tight text-fg sm:text-base;
+  }
+  .card-kicker {
+    @apply mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-brand/90;
+  }
+  .hint-link {
+    @apply inline-flex whitespace-nowrap rounded-md border-b border-dotted border-brand/80 text-xs font-bold text-brand underline decoration-brand/60 underline-offset-4 transition hover:text-cyan-200 active:scale-[0.98];
+  }
+  .info-panel {
+    @apply rounded-2xl border border-brand/30 bg-brand/10 px-4 py-3 text-sm leading-relaxed text-cyan-50;
   }
 
   /* Buttons */
@@ -80,7 +89,7 @@ body {
     @apply w-full rounded-xl border border-line bg-surface2 px-3 py-2.5 text-sm text-fg outline-none transition placeholder:text-faint focus:border-brand/70 focus:ring-2 focus:ring-brand/15;
   }
   .label {
-    @apply mb-1.5 block text-xs font-medium text-muted;
+    @apply mb-1.5 block text-sm font-bold text-fg;
   }
 
   /* Bits */
@@ -91,7 +100,7 @@ body {
     @apply nums text-2xl font-bold leading-none sm:text-[1.7rem];
   }
   .th {
-    @apply whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-faint;
+    @apply whitespace-nowrap px-3 py-2.5 text-left text-xs font-bold text-fg;
   }
   .td {
     @apply nums px-3 py-2.5 text-sm;

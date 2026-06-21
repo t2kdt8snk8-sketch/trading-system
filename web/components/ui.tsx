@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ApiError, DataMeta } from "@/lib/types";
 import { IconAlert, IconBolt, IconClose } from "./icons";
 
@@ -124,22 +124,92 @@ export function DataQuality({ meta }: { meta?: DataMeta }) {
       ? `${Math.round(v.coverage_ratio * 100)}%`
       : "—";
   const items: [string, string][] = [
-    ["출처", meta.source],
+    ["데이터 출처", meta.source],
     ["받은 종목", String(v.n_received ?? "—")],
     ["커버리지", coverage],
   ];
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-faint">
-      {items.map(([k, val]) => (
-        <span key={k}>
-          {k} <span className="text-muted">{val}</span>
+    <div className="rounded-2xl border border-line/70 bg-surface2/60 p-4">
+      <div className="card-title mb-3">데이터 품질</div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {items.map(([k, val]) => (
+          <div key={k} className="rounded-xl bg-bg/35 p-3">
+            <div className="text-xs font-bold text-muted">{k}</div>
+            <div className="mt-1 break-words text-sm font-semibold text-fg">{val}</div>
+          </div>
+        ))}
+      </div>
+      {meta.warnings?.length ? (
+        <div className="mt-3 space-y-2">
+          {meta.warnings.map((w, i) => (
+            <div key={i} className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm font-semibold text-warn">
+              {w}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function HintText({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex align-baseline">
+      <button
+        type="button"
+        className="hint-link"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {label}
+      </button>
+      {open ? (
+        <span className="absolute left-0 top-full z-30 mt-2 w-72 rounded-2xl border border-brand/40 bg-[#0d1218] p-3 text-left text-sm font-medium leading-relaxed text-fg shadow-card">
+          {children}
         </span>
-      ))}
-      {meta.warnings?.map((w, i) => (
-        <span key={i} className="text-warn">
-          {w}
-        </span>
-      ))}
+      ) : null}
+    </span>
+  );
+}
+
+export function SummaryCard({
+  title,
+  verdict,
+  tone = "neutral",
+  children,
+}: {
+  title: string;
+  verdict: string;
+  tone?: "good" | "bad" | "warn" | "neutral";
+  children: React.ReactNode;
+}) {
+  const toneClass =
+    tone === "good"
+      ? "border-up/40 bg-up/10 text-up"
+      : tone === "bad"
+        ? "border-down/40 bg-down/10 text-down"
+        : tone === "warn"
+          ? "border-warn/40 bg-warn/10 text-warn"
+          : "border-brand/35 bg-brand/10 text-brand";
+  return (
+    <div className="rounded-2xl border border-line/70 bg-surface/85 p-4 shadow-card">
+      <div className="card-kicker">먼저 볼 것</div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="card-title">{title}</div>
+          <div className="mt-2 text-sm leading-relaxed text-fg">{children}</div>
+        </div>
+        <div className={`shrink-0 rounded-xl border px-3 py-2 text-sm font-extrabold ${toneClass}`}>
+          {verdict}
+        </div>
+      </div>
     </div>
   );
 }
@@ -150,19 +220,24 @@ export function Stat({
   value,
   sub,
   tone,
+  help,
 }: {
   label: string;
   value: string;
   sub?: string;
   tone?: "good" | "bad" | "neutral";
+  help?: React.ReactNode;
 }) {
   const color =
     tone === "good" ? "text-up" : tone === "bad" ? "text-down" : "text-fg";
   return (
     <div className="rounded-xl border border-line/60 bg-surface2/50 p-3.5">
-      <div className="text-xs text-muted">{label}</div>
-      <div className={`stat-value mt-1.5 ${color}`}>{value}</div>
-      {sub ? <div className="mt-1 text-[11px] text-faint">{sub}</div> : null}
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-sm font-extrabold leading-tight text-fg">{label}</div>
+        {help ? <HintText label="설명">{help}</HintText> : null}
+      </div>
+      <div className={`stat-value mt-2 ${color}`}>{value}</div>
+      {sub ? <div className="mt-1 text-xs font-semibold text-muted">{sub}</div> : null}
     </div>
   );
 }

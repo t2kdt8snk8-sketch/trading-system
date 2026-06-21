@@ -12,9 +12,11 @@ import {
   DemoBanner,
   EmptyState,
   ErrorBanner,
+  HintText,
   RunButton,
   Spinner,
   Stat,
+  SummaryCard,
   ViewHeader,
 } from "./ui";
 import {
@@ -153,6 +155,19 @@ function Tearsheet({ data }: { data: BacktestResponse }) {
   return (
     <div className="animate-fade-up space-y-4">
       <DemoBanner meta={data.meta} />
+      <SummaryCard
+        title="백테스트 결론"
+        verdict={allPass ? "통과" : "불통과"}
+        tone={allPass ? "good" : "bad"}
+      >
+        이 전략은 과거 기간에서 {allPass ? "최소 기준을 통과했습니다" : "최소 기준을 통과하지 못했습니다"}.{" "}
+        <HintText label="게이트 판정">
+          SPY보다 충분히 나았는지, 위험 대비 수익이 괜찮았는지, 최대낙폭이 너무 크지
+          않았는지를 보는 최소 합격선입니다. 통과해도 바로 실거래는 아닙니다.
+        </HintText>
+        {" "}다음 단계는 기간을 나눠 확인하고, 괜찮으면 페이퍼 트레이딩입니다.
+      </SummaryCard>
+      <DataQuality meta={data.meta} />
 
       {/* KPI band — above the fold, Z-pattern left→right */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
@@ -160,29 +175,38 @@ function Tearsheet({ data }: { data: BacktestResponse }) {
           label="CAGR (연복리)"
           value={pct(m.cagr)}
           sub={`SPY ${pct(m.benchmark_cagr)}`}
+          help="1년에 평균 몇 % 벌었는지입니다. SPY보다 높으면 시장보다 잘한 겁니다."
         />
         <Stat
           label="초과수익 vs SPY"
           value={signedPct(m.excess_cagr)}
           tone={(m.excess_cagr ?? 0) > 0 ? "good" : "bad"}
+          help="SPY를 그냥 샀을 때보다 연평균 얼마나 더 벌었는지입니다. 마이너스면 SPY보다 못한 겁니다."
         />
         <Stat
           label="샤프"
           value={num(m.sharpe)}
           sub={`SPY ${num(m.benchmark_sharpe)}`}
+          help="출렁임 대비 수익입니다. 높을수록 같은 위험으로 더 잘 번 전략입니다."
         />
         <Stat
           label="변동성"
           value={pct(m.volatility)}
           sub={`SPY ${pct(m.benchmark_volatility)}`}
+          help="가격이 얼마나 심하게 흔들렸는지입니다. 낮을수록 덜 불안한 전략입니다."
         />
         <Stat
           label="최대낙폭 MDD"
           value={pct(m.mdd)}
           tone="bad"
           sub={`SPY ${pct(m.benchmark_mdd)}`}
+          help="최악의 순간에 고점 대비 얼마나 빠졌는지입니다. -40%면 최고점에서 40% 물렸다는 뜻입니다."
         />
-        <Stat label="평균 회전율" value={pct(m.avg_turnover)} />
+        <Stat
+          label="평균 회전율"
+          value={pct(m.avg_turnover)}
+          help="리밸런싱 때 포트폴리오를 얼마나 갈아엎었는지입니다. 높으면 비용과 실전 부담이 커집니다."
+        />
       </div>
 
       {/* Hero: cumulative performance + underwater drawdown, shared axis */}
@@ -280,13 +304,12 @@ function Tearsheet({ data }: { data: BacktestResponse }) {
       </div>
 
       {/* Survivorship caveat */}
-      <div className="flex items-start gap-3 rounded-2xl border border-warn/30 bg-warn/[0.06] p-4">
+      <div className="flex items-start gap-3 rounded-2xl border border-warn/40 bg-warn/10 p-4">
         <IconAlert className="mt-0.5 h-5 w-5 shrink-0 text-warn" />
-        <p className="text-xs leading-relaxed text-muted">
-          <b className="text-warn">생존편향 한계</b> · 현재 S&P500 구성종목만 사용
-          → 망한 회사가 빠져 있어 결과가 <b className="text-fg">실제보다 좋게</b>{" "}
-          나옵니다. SPY 대비 초과수익도 부풀려질 수 있어요. 숫자를 그대로 믿지 말
-          것.
+        <p className="text-sm font-medium leading-relaxed text-fg">
+          <b className="text-warn">중요: 생존편향 한계</b> · 현재 S&P500 구성종목만 사용
+          → 망한 회사가 빠져 있어 결과가 <b className="text-white">실제보다 좋게</b>{" "}
+          나올 수 있습니다. <HintText label="생존편향 설명">과거에 망해서 S&P500에서 빠진 회사가 데이터에 없으면, 과거 성과가 실제보다 좋아 보입니다.</HintText>
         </p>
       </div>
 
@@ -310,7 +333,7 @@ function Tearsheet({ data }: { data: BacktestResponse }) {
             <tbody>
               {data.recent_trades.map((t) => (
                 <tr key={t.rebalance_date} className="border-t border-line/50">
-                  <td className="td text-muted">{t.rebalance_date}</td>
+                  <td className="td font-semibold text-fg">{t.rebalance_date}</td>
                   <td className="td text-right">{signedPct(t.gross_return)}</td>
                   <td className="td text-right text-down">−{pct(t.cost, 2)}</td>
                   <td
@@ -320,16 +343,14 @@ function Tearsheet({ data }: { data: BacktestResponse }) {
                   >
                     {signedPct(t.net_return)}
                   </td>
-                  <td className="td text-right text-muted">{pct(t.turnover)}</td>
-                  <td className="td text-right text-muted">{t.n_holdings}</td>
+                  <td className="td text-right font-semibold text-fg">{pct(t.turnover)}</td>
+                  <td className="td text-right font-semibold text-fg">{t.n_holdings}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </Card>
-
-      <DataQuality meta={data.meta} />
     </div>
   );
 }
