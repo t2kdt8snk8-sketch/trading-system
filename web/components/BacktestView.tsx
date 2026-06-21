@@ -30,6 +30,101 @@ import {
 import { GateVerdict } from "./GateVerdict";
 import { IconAlert, IconChart } from "./icons";
 
+function safeFilePart(value: string) {
+  return value.replace(/[^a-zA-Z0-9가-힣_.-]+/g, "-").replace(/-+/g, "-");
+}
+
+function downloadTextFile(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function csvCell(value: unknown) {
+  if (value == null) return "";
+  const s = String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function buildTradesCsv(data: BacktestResponse) {
+  const header = [
+    "rebalance_date",
+    "execution_date",
+    "period_end",
+    "gross_return_decimal",
+    "cost_decimal",
+    "net_return_decimal",
+    "turnover_decimal",
+    "n_holdings",
+  ];
+  const rows = data.recent_trades.map((t) => [
+    t.rebalance_date,
+    t.execution_date,
+    t.period_end,
+    t.gross_return,
+    t.cost,
+    t.net_return,
+    t.turnover,
+    t.n_holdings,
+  ]);
+  return [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
+function buildAiJson(data: BacktestResponse) {
+  const checks = data.gate_checks;
+  const passCount = checks.filter((c) => c.pass).length;
+  const allPass = checks.length > 0 && passCount === checks.length;
+  return {
+    schema: "trading-system.backtest.ai-export.v1",
+    generated_at: new Date().toISOString(),
+    intended_use: "Send this JSON to an AI assistant for strategy/backtest review. Numeric returns are decimals, not percent strings.",
+    warnings_for_ai: [
+      "This is historical backtest data, not a live-trading signal.",
+      "Current universe may have survivorship bias because it uses current S&P 500 constituents.",
+      "Do not recommend loosening thresholds merely to make this run pass; evaluate robustness and risk tolerance.",
+    ],
+    verdict: {
+      passed: allPass,
+      pass_count: passCount,
+      total_checks: checks.length,
+    },
+    period: data.period,
+    config: data.config,
+    metrics: data.metrics,
+    gate_checks: data.gate_checks,
+    data_meta: data.meta,
+    curves: {
+      strategy_equity: data.equity_curve,
+      benchmark_equity: data.benchmark_curve,
+    },
+    recent_rebalances: data.recent_trades,
+  };
+}
+
+function exportBacktest(data: BacktestResponse, kind: "ai-json" | "trades-csv") {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  const period = safeFilePart(`${data.period.start}_${data.period.end}`);
+  if (kind === "trades-csv") {
+    downloadTextFile(
+      `backtest-rebalances-${period}-${stamp}.csv`,
+      buildTradesCsv(data),
+      "text/csv;charset=utf-8",
+    );
+    return;
+  }
+  downloadTextFile(
+    `backtest-ai-export-${period}-${stamp}.json`,
+    JSON.stringify(buildAiJson(data), null, 2),
+    "application/json;charset=utf-8",
+  );
+}
+
 export function BacktestView({ settings }: { settings: Settings }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -168,6 +263,33 @@ function Tearsheet({ data }: { data: BacktestResponse }) {
         {" "}다음 단계는 기간을 나눠 확인하고, 괜찮으면 페이퍼 트레이딩입니다.
       </SummaryCard>
       <DataQuality meta={data.meta} />
+
+      <Card>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="card-title">AI 분석용 내보내기</div>
+            <p className="mt-1 text-sm font-medium leading-relaxed text-muted">
+              다른 AI에게 그대로 보내기 좋게 원본 숫자·설정·게이트·곡선을 구조화 JSON으로 저장합니다. CSV는 리밸런싱 표 분석용입니다.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+            <button
+              type="button"
+              className="btn btn-secondary justify-center"
+              onClick={() => exportBacktest(data, "ai-json")}
+            >
+              AI JSON 저장
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary justify-center"
+              onClick={() => exportBacktest(data, "trades-csv")}
+            >
+              CSV 저장
+            </button>
+          </div>
+        </div>
+      </Card>
 
       {/* KPI band — above the fold, Z-pattern left→right */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
