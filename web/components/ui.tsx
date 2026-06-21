@@ -83,7 +83,7 @@ export function ErrorBanner({ error }: { error: unknown }) {
   const msg = error instanceof Error ? error.message : String(error);
   const detail =
     error instanceof ApiError && error.detail ? error.detail : null;
-  const detailText = detail
+  const detailText = detail && detail !== "job not found"
     ? typeof detail === "string"
       ? detail
       : JSON.stringify(detail, null, 2)

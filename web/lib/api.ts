@@ -108,10 +108,18 @@ interface JobResponse<T> {
   error?: unknown;
 }
 
-const ACTIVE_BACKTEST_JOB_KEY = "trading-system.activeBacktestJobId";
+const LEGACY_ACTIVE_BACKTEST_JOB_KEY = "trading-system.activeBacktestJobId";
+const ACTIVE_BACKTEST_JOB_KEY = "trading-system.activeBacktestJobId.v2";
+
+function dropLegacyBacktestJob(): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(LEGACY_ACTIVE_BACKTEST_JOB_KEY);
+  }
+}
 
 function saveActiveBacktestJob(jobId: string): void {
   if (typeof window !== "undefined") {
+    dropLegacyBacktestJob();
     window.localStorage.setItem(ACTIVE_BACKTEST_JOB_KEY, jobId);
   }
 }
@@ -125,6 +133,7 @@ function clearActiveBacktestJob(jobId?: string): void {
 
 function getActiveBacktestJob(): string | null {
   if (typeof window === "undefined") return null;
+  dropLegacyBacktestJob();
   return window.localStorage.getItem(ACTIVE_BACKTEST_JOB_KEY);
 }
 
@@ -172,7 +181,7 @@ async function pollBacktestJob(
   throw new ApiError("백테스트 시간이 너무 오래 걸립니다. 잠시 뒤 다시 시도하세요.", null);
 }
 
-async function runBacktestJob(o: RunOptions): Promise<BacktestResponse> {
+async function startBacktestJob(o: RunOptions): Promise<string> {
   const started = await post<{ job_id: string }>("/api/backtest/jobs", {
     config: o.config,
     mode: o.mode,
@@ -181,11 +190,27 @@ async function runBacktestJob(o: RunOptions): Promise<BacktestResponse> {
     end: o.end,
   });
   saveActiveBacktestJob(started.job_id);
-  const result = await pollBacktestJob(started.job_id);
-  if (!result) {
-    throw new ApiError("백테스트 작업이 사라졌습니다. 다시 실행하세요.", "job not found");
+  return started.job_id;
+}
+
+async function runBacktestJob(o: RunOptions): Promise<BacktestResponse> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const jobId = await startBacktestJob(o);
+    try {
+      const result = await pollBacktestJob(jobId);
+      if (result) return result;
+    } catch (e) {
+      if (isMissingJobError(e) && attempt === 0) {
+        await sleep(1000);
+        continue;
+      }
+      throw e;
+    }
   }
-  return result;
+  throw new ApiError(
+    "Render 서버가 재시작되어 백테스트 작업이 사라졌습니다. 잠시 뒤 다시 실행하세요.",
+    null,
+  );
 }
 
 export interface RunOptions {
