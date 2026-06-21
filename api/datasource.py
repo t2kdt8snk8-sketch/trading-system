@@ -44,7 +44,9 @@ def _load_live(cfg: Any, start: str, end: str, max_tickers: int | None) -> Marke
     request_tickers = sorted(set(tickers) | {BENCHMARK})
 
     # Raises on failure (e.g. no network / yfinance empty). Caller surfaces it.
-    ohlcv = get_ohlcv(request_tickers, start, end, cache_dir=cfg.cache_dir)
+    # Backtest + scorer only consume Open/Close; skipping High/Low/Volume keeps
+    # the full-universe live load from exhausting free-tier memory (OOM -> 502).
+    ohlcv = get_ohlcv(request_tickers, start, end, cache_dir=cfg.cache_dir, fields=("Open", "Close"))
 
     sectors = pd.Series(
         universe.set_index("ticker")["sector"].to_dict(), name="sector"
@@ -113,13 +115,8 @@ def _load_demo(cfg: Any, start: str, end: str, max_tickers: int | None) -> Marke
 
     open_px = close.shift(1)
     open_px.iloc[0] = close.iloc[0]
-    ohlcv = {
-        "Open": open_px,
-        "High": open_px.combine(close, np.maximum),
-        "Low": open_px.combine(close, np.minimum),
-        "Close": close,
-        "Volume": pd.DataFrame(1_000_000.0, index=index, columns=close.columns),
-    }
+    # Only Open/Close are consumed downstream; mirror the live path's lean load.
+    ohlcv = {"Open": open_px, "Close": close}
     sectors = pd.Series(sector_map, name="sector")
     meta = {
         "mode": "demo",

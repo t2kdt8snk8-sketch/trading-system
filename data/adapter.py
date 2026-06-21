@@ -94,13 +94,23 @@ def get_ohlcv(
     end: str,
     cache_dir: str = "data/cache",
     use_cache: bool = True,
+    fields: tuple[str, ...] = OHLC_FIELDS,
 ) -> dict[str, pd.DataFrame]:
-    """Return OHLCV dict of DataFrames keyed by field; uses cache when available."""
+    """Return OHLCV dict of DataFrames keyed by field; uses cache when available.
+
+    Pass a subset via ``fields`` to only materialize what the caller needs. The
+    backtest/scoring path only reads Open and Close, so loading the full universe
+    with ``fields=("Open", "Close")`` cuts price-frame memory by ~60% and keeps a
+    500-ticker live backtest from OOM-killing the worker (which surfaces as 502).
+    """
+    unknown = set(fields) - set(OHLC_FIELDS)
+    if unknown:
+        raise ValueError(f"unknown OHLCV field(s): {sorted(unknown)}")
     clean_tickers = [_normalize_ticker(t) for t in tickers]
     cache_path = Path(cache_dir)
     cache_path.mkdir(parents=True, exist_ok=True)
     key = _cache_key(clean_tickers, start, end, "ohlcv")
-    cached_files = {field: cache_path / f"{key}_{field.lower()}.csv" for field in OHLC_FIELDS}
+    cached_files = {field: cache_path / f"{key}_{field.lower()}.csv" for field in fields}
     if use_cache and all(path.exists() for path in cached_files.values()):
         return {
             field: pd.read_csv(path, index_col=0, parse_dates=True).rename_axis(None, axis=1)
@@ -108,7 +118,8 @@ def get_ohlcv(
         }
 
     raw = _download_yfinance(clean_tickers, start, end)
-    frames = {field: _extract_field(raw, field, clean_tickers) for field in OHLC_FIELDS}
+    frames = {field: _extract_field(raw, field, clean_tickers) for field in fields}
+    del raw  # release the large intermediate frame before returning/caching
     for field, frame in frames.items():
         frame.to_csv(cached_files[field])
     return frames
