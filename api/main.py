@@ -1,6 +1,8 @@
 """FastAPI app exposing the scoring/backtesting backend and static web UI."""
 from __future__ import annotations
 
+import json
+import os
 import traceback
 import uuid
 from datetime import datetime, timezone
@@ -59,9 +61,62 @@ class OosRequest(BaseModel):
 JOBS: dict[str, dict[str, Any]] = {}
 MAX_JOBS = 20
 
+# Jobs live in an in-memory dict, so a worker restart (e.g. an OOM kill on the
+# full-universe live backtest) wipes them and the UI only sees an opaque 404
+# "job not found". Mirror job state to disk so a restart instead surfaces the
+# real cause: any job left "running" after a restart was killed mid-run.
+JOBS_DIR = Path(os.environ.get("JOBS_DIR", "data/cache/jobs"))
+WORKER_RESTART_MSG = (
+    "서버가 작업 도중 재시작되었습니다(무료 플랜 메모리 초과로 추정). "
+    "종목 수를 줄이거나 플랜 메모리를 올린 뒤 다시 실행하세요."
+)
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _persist_job(job: dict[str, Any]) -> None:
+    """Best-effort mirror of one job to disk; never let disk issues break the API."""
+    try:
+        JOBS_DIR.mkdir(parents=True, exist_ok=True)
+        (JOBS_DIR / f"{job['id']}.json").write_text(json.dumps(job, default=str))
+    except Exception:  # noqa: BLE001 — persistence is a best-effort safety net
+        pass
+
+
+def _delete_job_file(job_id: str) -> None:
+    try:
+        (JOBS_DIR / f"{job_id}.json").unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _load_jobs_from_disk() -> None:
+    """On startup, reload jobs. A job still 'running'/'queued' means its worker
+    died mid-run (almost always OOM on free tier) — mark it failed so the UI can
+    show why instead of a confusing 404."""
+    try:
+        files = sorted(JOBS_DIR.glob("*.json")) if JOBS_DIR.exists() else []
+    except Exception:  # noqa: BLE001
+        return
+    for path in files:
+        try:
+            job = json.loads(path.read_text())
+        except Exception:  # noqa: BLE001
+            continue
+        if job.get("status") in ("queued", "running"):
+            job["status"] = "error"
+            job["error"] = {"error": WORKER_RESTART_MSG, "type": "WorkerRestart"}
+            job["updated_at"] = _now()
+            _persist_job(job)
+        JOBS[job.get("id", path.stem)] = job
+
+
+def _set_job(job_id: str, **fields: Any) -> None:
+    JOBS[job_id].update(fields)
+    JOBS[job_id]["updated_at"] = _now()
+    _persist_job(JOBS[job_id])
 
 
 def _trim_jobs() -> None:
@@ -69,10 +124,11 @@ def _trim_jobs() -> None:
         return
     for job_id in sorted(JOBS, key=lambda k: JOBS[k].get("created_at", ""))[: len(JOBS) - MAX_JOBS]:
         JOBS.pop(job_id, None)
+        _delete_job_file(job_id)
 
 
 def _run_backtest_job(job_id: str, req: BacktestRequest) -> None:
-    JOBS[job_id].update({"status": "running", "updated_at": _now()})
+    _set_job(job_id, status="running")
     try:
         result = pipeline.run_backtest_ep(
             req.config,
@@ -81,18 +137,16 @@ def _run_backtest_job(job_id: str, req: BacktestRequest) -> None:
             mode=req.mode,
             max_tickers=req.max_tickers,
         )
-        JOBS[job_id].update({"status": "done", "result": result, "updated_at": _now()})
+        _set_job(job_id, status="done", result=result)
     except Exception as exc:  # noqa: BLE001 — preserve visible failure for polling UI
-        JOBS[job_id].update(
-            {
-                "status": "error",
-                "error": {
-                    "error": str(exc),
-                    "type": type(exc).__name__,
-                    "trace": traceback.format_exc().splitlines()[-6:],
-                },
-                "updated_at": _now(),
-            }
+        _set_job(
+            job_id,
+            status="error",
+            error={
+                "error": str(exc),
+                "type": type(exc).__name__,
+                "trace": traceback.format_exc().splitlines()[-6:],
+            },
         )
 
 
@@ -111,6 +165,9 @@ def _guard(fn, *args, **kwargs):
                 "trace": traceback.format_exc().splitlines()[-6:],
             },
         ) from exc
+
+
+_load_jobs_from_disk()
 
 
 @app.get("/api/health")
@@ -152,6 +209,7 @@ def start_backtest_job(req: BacktestRequest, background_tasks: BackgroundTasks) 
         "created_at": _now(),
         "updated_at": _now(),
     }
+    _persist_job(JOBS[job_id])
     background_tasks.add_task(_run_backtest_job, job_id, req)
     return {"job_id": job_id, "status": "queued"}
 
@@ -159,6 +217,12 @@ def start_backtest_job(req: BacktestRequest, background_tasks: BackgroundTasks) 
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str) -> dict[str, Any]:
     job = JOBS.get(job_id)
+    if job is None:  # not in memory — fall back to the disk mirror across restarts
+        try:
+            job = json.loads((JOBS_DIR / f"{job_id}.json").read_text())
+            JOBS[job_id] = job
+        except Exception:  # noqa: BLE001
+            job = None
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
     return job
