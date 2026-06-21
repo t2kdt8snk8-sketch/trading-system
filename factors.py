@@ -14,11 +14,24 @@ TRADING_DAYS_PER_YEAR = 252
 def _slice_asof(prices: pd.DataFrame, asof: pd.Timestamp | None) -> pd.DataFrame:
     if prices.empty:
         raise ValueError("prices is empty")
-    frame = prices.copy()
-    frame.index = pd.to_datetime(frame.index).tz_localize(None)
-    frame = frame.sort_index()
+    # Factor functions only read the frame, so normalize the index lazily instead
+    # of always copying+sorting. On already-clean data (tz-naive, sorted
+    # DatetimeIndex) this does zero copies — and in a backtest this runs ~800
+    # times, so the old unconditional copy+sort was a major source of churn.
+    frame = prices
+    index = frame.index
+    if not isinstance(index, pd.DatetimeIndex):
+        index = pd.to_datetime(index)
+        frame = frame.set_axis(index, axis=0)
+    if index.tz is not None:
+        index = index.tz_localize(None)
+        frame = frame.set_axis(index, axis=0)
+    if not index.is_monotonic_increasing:
+        frame = frame.sort_index()
     if asof is not None:
-        cutoff = pd.Timestamp(asof).tz_localize(None) if pd.Timestamp(asof).tzinfo else pd.Timestamp(asof)
+        cutoff = pd.Timestamp(asof)
+        if cutoff.tzinfo is not None:
+            cutoff = cutoff.tz_localize(None)
         frame = frame.loc[frame.index <= cutoff]
     if frame.empty:
         raise ValueError("no prices available at or before asof")
@@ -60,10 +73,17 @@ def volatility(
     return vol
 
 
-def risk_adjusted_momentum(prices: pd.DataFrame, cfg: Any) -> pd.Series:
-    """Return momentum divided by annualized volatility; index=tickers."""
+def risk_adjusted_momentum(
+    prices: pd.DataFrame, cfg: Any, vol: pd.Series | None = None
+) -> pd.Series:
+    """Return momentum divided by annualized volatility; index=tickers.
+
+    ``vol`` may be passed in to reuse an already-computed volatility (the inverse-
+    vol weighting needs the same Series), avoiding a duplicate full computation.
+    """
     mom = momentum(prices, cfg.momentum_lookback_months, cfg.momentum_skip_months)
-    vol = volatility(prices, cfg.vol_window_days)
+    if vol is None:
+        vol = volatility(prices, cfg.vol_window_days)
     out = mom / vol
     out = out.replace([np.inf, -np.inf], np.nan)
     out.name = "risk_adjusted_momentum"

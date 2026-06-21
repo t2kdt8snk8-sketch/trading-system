@@ -62,9 +62,9 @@ def rank_and_select(scores: pd.Series, top_n: int, trend_ok: pd.Series | None = 
     return pd.Index(eligible.sort_values(ascending=False).head(top_n).index)
 
 
-def _factor_for_signal(prices: pd.DataFrame, cfg: Any) -> pd.Series:
+def _factor_for_signal(prices: pd.DataFrame, cfg: Any, vol: pd.Series | None = None) -> pd.Series:
     if cfg.signal == "risk_adjusted_momentum":
-        return risk_adjusted_momentum(prices, cfg)
+        return risk_adjusted_momentum(prices, cfg, vol=vol)
     if cfg.signal == "pure_momentum":
         return momentum(prices, cfg.momentum_lookback_months, cfg.momentum_skip_months)
     raise ValueError(f"unsupported signal: {cfg.signal}")
@@ -72,13 +72,20 @@ def _factor_for_signal(prices: pd.DataFrame, cfg: Any) -> pd.Series:
 
 def build_portfolio(prices: pd.DataFrame, sectors: pd.Series, cfg: Any) -> pd.DataFrame:
     """Build portfolio DataFrame columns ['score','weight','sector'] from prices/sectors."""
-    raw_factor = _factor_for_signal(prices, cfg)
+    # Volatility feeds both the risk-adjusted score and inverse-vol weighting, so
+    # compute it once (only when actually needed) and share it across both.
+    needs_vol = cfg.signal == "risk_adjusted_momentum" or cfg.weighting == "inverse_vol"
+    vol = volatility(prices, cfg.vol_window_days) if needs_vol else None
+
+    raw_factor = _factor_for_signal(prices, cfg, vol=vol)
     factor = sector_zscore(raw_factor, sectors, cfg.min_stocks_per_sector) if cfg.sector_neutral else raw_factor
     scores = combined_score({cfg.signal: factor}, {cfg.signal: 1.0})
     trend_ok = above_ma(prices, cfg.trend_ma_days) if cfg.trend_gate else None
     selected = rank_and_select(scores, cfg.top_n, trend_ok=trend_ok)
-    vol = volatility(prices, cfg.vol_window_days)
-    weights = inverse_vol_weights(selected, vol) if cfg.weighting == "inverse_vol" else pd.Series(1 / len(selected), index=selected)
+    if cfg.weighting == "inverse_vol":
+        weights = inverse_vol_weights(selected, vol)
+    else:
+        weights = pd.Series(1 / len(selected), index=selected)
     portfolio = pd.DataFrame(
         {
             "score": scores.reindex(weights.index),
