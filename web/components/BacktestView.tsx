@@ -2,8 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { BacktestResponse } from "@/lib/types";
+import { BacktestResponse, Metrics } from "@/lib/types";
 import { pct, signedPct, num } from "@/lib/format";
+
+// Survivorship-bias haircut is an ASSUMPTION, not a measurement: backtests on
+// today's S&P 500 constituents omit past losers that were later delisted, which
+// inflates returns. Academic estimates land roughly in the 1–4%/yr range; we
+// default to a deliberately middling 2%/yr and let the user stress it. Only
+// truly fixable with point-in-time constituent data, so this stays in the
+// presentation layer (interpretation), never in the backend metrics (facts).
+const DEFAULT_SURVIVORSHIP_HAIRCUT = 0.02;
 import { recoveryFactor, longestDrawdownDays } from "@/lib/metrics";
 import { Settings } from "./ConfigBar";
 import {
@@ -93,6 +101,20 @@ function buildAiJson(data: BacktestResponse) {
       passed: allPass,
       pass_count: passCount,
       total_checks: checks.length,
+    },
+    reality_check: {
+      note:
+        "Survivorship-bias haircut is an ASSUMPTION (academic estimates ~1-4%/yr), not a measured value for this strategy. " +
+        "It only approximates the inflation from backtesting on current S&P 500 constituents. " +
+        "The real validation is out-of-sample (unseen period) results plus forward paper trading, not this haircut.",
+      assumed_survivorship_haircut_per_year: DEFAULT_SURVIVORSHIP_HAIRCUT,
+      discounted_cagr:
+        data.metrics.cagr != null ? data.metrics.cagr - DEFAULT_SURVIVORSHIP_HAIRCUT : null,
+      discounted_excess_vs_spy:
+        data.metrics.cagr != null && data.metrics.benchmark_cagr != null
+          ? data.metrics.cagr - DEFAULT_SURVIVORSHIP_HAIRCUT - data.metrics.benchmark_cagr
+          : null,
+      breakeven_haircut_per_year: data.metrics.excess_cagr,
     },
     period: data.period,
     config: data.config,
@@ -202,6 +224,116 @@ export function BacktestView({ settings }: { settings: Settings }) {
 
       {data && m && !loading && <Tearsheet data={data} />}
     </div>
+  );
+}
+
+function RealityCheck({ metrics }: { metrics: Metrics }) {
+  const [haircut, setHaircut] = useState(DEFAULT_SURVIVORSHIP_HAIRCUT);
+  const { cagr, benchmark_cagr: spy, excess_cagr: excess } = metrics;
+  if (cagr == null || spy == null || excess == null) return null;
+
+  const discCagr = cagr - haircut;
+  const discExcess = discCagr - spy;
+
+  // Robustness band: compare the *raw* edge to the typical survivorship range.
+  // The point is a margin-of-safety read, not a "true" number.
+  let band: { tone: "good" | "warn" | "bad"; dot: string; verdict: string; detail: string };
+  if (excess <= 0.01) {
+    band = {
+      tone: "bad",
+      dot: "🔴",
+      verdict: "취약",
+      detail:
+        "초과수익이 생존편향만으로도 설명 가능한 수준입니다. 진짜 edge가 아닐 가능성이 큽니다.",
+    };
+  } else if (excess <= 0.04) {
+    band = {
+      tone: "warn",
+      dot: "🟡",
+      verdict: "주의",
+      detail:
+        "초과수익이 생존편향 추정 범위(연 1~4%) 안에 있습니다. 상당 부분이 편향일 수 있습니다.",
+    };
+  } else {
+    band = {
+      tone: "good",
+      dot: "🟢",
+      verdict: "여유 있음",
+      detail:
+        "초과수익이 일반적 생존편향 추정(연 1~4%)보다 큽니다. edge가 전부 편향은 아닐 가능성. 단, 증명은 아닙니다.",
+    };
+  }
+  const toneText =
+    band.tone === "good" ? "text-up" : band.tone === "bad" ? "text-down" : "text-warn";
+
+  return (
+    <Card>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="card-title">현실 기대치 · 생존편향 할인</div>
+        <span className="text-[11px] font-medium text-faint">해석 도구 · 측정값 아님</span>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted">백테스트 CAGR</span>
+            <span className="font-semibold text-fg">{pct(cagr)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted">
+              생존편향 차감 <span className="text-faint">(가정)</span>
+            </span>
+            <span className="font-semibold text-down">−{pct(haircut)}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={0.06}
+            step={0.005}
+            value={haircut}
+            onChange={(e) => setHaircut(Number(e.target.value))}
+            className="w-full accent-brand"
+            aria-label="생존편향 차감률"
+          />
+          <div className="flex justify-between text-[10px] text-faint">
+            <span>0%</span>
+            <span>학술 추정 1~4%/년</span>
+            <span>6%</span>
+          </div>
+          <div className="mt-2 flex items-center justify-between border-t border-line/60 pt-2">
+            <span className="text-muted">할인 후 CAGR</span>
+            <span className="font-bold text-fg">{pct(discCagr)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted">할인 후 초과 vs SPY</span>
+            <span className={`font-bold ${discExcess > 0 ? "text-up" : "text-down"}`}>
+              {signedPct(discExcess)}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-col justify-center gap-2 rounded-xl border border-line/60 bg-card/40 p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{band.dot}</span>
+            <span className={`text-base font-extrabold ${toneText}`}>강건성: {band.verdict}</span>
+          </div>
+          <p className="text-xs leading-relaxed text-muted">{band.detail}</p>
+          <p className="text-[11px] leading-relaxed text-faint">
+            현재 초과수익 <b className="text-fg">{signedPct(excess)}</b> — 이만큼의 연간 손실이
+            나야 SPY 대비 우위가 사라집니다(손익분기 할인율).
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn/10 p-3">
+        <IconAlert className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+        <p className="text-[11px] leading-relaxed text-fg">
+          이 차감은 <b className="text-warn">측정값이 아니라 가정</b>입니다. 생존편향은 시점별
+          구성종목(PIT) 데이터 없이는 정확히 계산할 수 없습니다. 진짜 검증은 이 할인이 아니라{" "}
+          <b className="text-white">OOS(안 본 기간)와 페이퍼 트레이딩</b>입니다.
+        </p>
+      </div>
+    </Card>
   );
 }
 
@@ -329,6 +461,9 @@ function Tearsheet({ data }: { data: BacktestResponse }) {
           help="리밸런싱 때 포트폴리오를 얼마나 갈아엎었는지입니다. 높으면 비용과 실전 부담이 커집니다."
         />
       </div>
+
+      {/* Reality check: temper the headline number against survivorship bias */}
+      <RealityCheck metrics={m} />
 
       {/* Hero: cumulative performance + underwater drawdown, shared axis */}
       <Card>
