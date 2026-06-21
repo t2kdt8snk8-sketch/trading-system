@@ -47,6 +47,10 @@ def _load_live(cfg: Any, start: str, end: str, max_tickers: int | None) -> Marke
     # Backtest + scorer only consume Open/Close; skipping High/Low/Volume keeps
     # the full-universe live load from exhausting free-tier memory (OOM -> 502).
     ohlcv = get_ohlcv(request_tickers, start, end, cache_dir=cfg.cache_dir, fields=("Open", "Close"))
+    # float32 halves the price matrices (and every per-rebalance copy the factor
+    # code makes), which is the difference that keeps the full universe under the
+    # free-tier memory ceiling. Price math is ratio-based, so f32 precision is fine.
+    ohlcv = {field: frame.astype("float32") for field, frame in ohlcv.items()}
 
     sectors = pd.Series(
         universe.set_index("ticker")["sector"].to_dict(), name="sector"
@@ -115,8 +119,9 @@ def _load_demo(cfg: Any, start: str, end: str, max_tickers: int | None) -> Marke
 
     open_px = close.shift(1)
     open_px.iloc[0] = close.iloc[0]
-    # Only Open/Close are consumed downstream; mirror the live path's lean load.
-    ohlcv = {"Open": open_px, "Close": close}
+    # Only Open/Close are consumed downstream; mirror the live path's lean,
+    # float32 load so demo and live exercise the same memory profile.
+    ohlcv = {"Open": open_px.astype("float32"), "Close": close.astype("float32")}
     sectors = pd.Series(sector_map, name="sector")
     meta = {
         "mode": "demo",
