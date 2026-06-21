@@ -12,6 +12,7 @@ import pandas as pd
 
 from backtest import passes_gate, run_backtest
 from config import Config
+from data.constituents import load_membership, members_asof
 from scorer import build_portfolio
 
 from api.datasource import BENCHMARK, MarketData, load_market_data, today_str
@@ -68,6 +69,41 @@ def _load_with_warmup(
     return load_market_data(cfg, data_start, end, mode=mode, max_tickers=max_tickers)
 
 
+def _point_in_time_resolver(cfg: Config, mode: str, meta: dict[str, Any]):
+    """Build a date->members resolver for live backtests; record status in meta.
+
+    Demo data has synthetic tickers with no index membership, so PIT is skipped
+    there. If the membership data can't be loaded, degrade to the full universe
+    (still better than crashing) and say so in meta.
+    """
+    status: dict[str, Any] = {"enabled": bool(cfg.point_in_time and mode == "live")}
+    if not status["enabled"]:
+        status["note"] = "데모 데이터 또는 비활성화 — 시점별 구성종목 미적용."
+        meta["point_in_time"] = status
+        return None
+
+    checkpoints = load_membership(cfg.cache_dir)
+    if not checkpoints:
+        status.update(
+            applied=False,
+            note="시점별 구성종목 데이터를 불러오지 못해 전체 유니버스로 진행(생존편향 보정 미적용).",
+        )
+        meta.setdefault("warnings", []).append(status["note"])
+        meta["point_in_time"] = status
+        return None
+
+    status.update(
+        applied=True,
+        coverage="1996~현재",
+        note=(
+            "각 리밸런싱에 그 시점 S&P500 구성종목만 후보로 사용 — '미래 승자 선취'(예: 편입 전 테슬라) 제거. "
+            "단, 상장폐지된 과거 종목의 가격은 무료 데이터에 없어 '패자 누락'은 남아 있음."
+        ),
+    )
+    meta["point_in_time"] = status
+    return lambda date: members_asof(checkpoints, date)
+
+
 # --------------------------------------------------------------------------- #
 # Endpoints' work                                                              #
 # --------------------------------------------------------------------------- #
@@ -122,7 +158,10 @@ def run_backtest_ep(
     end = end or today_str()
     data = _load_with_warmup(cfg, start, end, mode, max_tickers)
 
-    result = run_backtest(data.ohlcv, data.sectors, cfg, start=start, end=end)
+    universe_asof = _point_in_time_resolver(cfg, mode, data.meta)
+    result = run_backtest(
+        data.ohlcv, data.sectors, cfg, start=start, end=end, universe_asof=universe_asof
+    )
     equity = result.equity_curve.sort_index()
     norm_equity = equity / equity.iloc[0]
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { BacktestResponse, Metrics } from "@/lib/types";
+import { BacktestResponse } from "@/lib/types";
 import { pct, signedPct, num } from "@/lib/format";
 
 // Survivorship-bias haircut is an ASSUMPTION, not a measurement: backtests on
@@ -94,7 +94,9 @@ function buildAiJson(data: BacktestResponse) {
     intended_use: "Send this JSON to an AI assistant for strategy/backtest review. Numeric returns are decimals, not percent strings.",
     warnings_for_ai: [
       "This is historical backtest data, not a live-trading signal.",
-      "Current universe may have survivorship bias because it uses current S&P 500 constituents.",
+      data.meta.point_in_time?.applied
+        ? "Point-in-time S&P 500 membership WAS applied (no buying stocks before they joined the index). Residual survivorship bias remains from delisted losers whose prices are absent in the free data."
+        : "Survivorship bias is LARGE here: today's S&P 500 constituents were used for all history (point-in-time membership not applied).",
       "Do not recommend loosening thresholds merely to make this run pass; evaluate robustness and risk tolerance.",
     ],
     verdict: {
@@ -115,6 +117,7 @@ function buildAiJson(data: BacktestResponse) {
           ? data.metrics.cagr - DEFAULT_SURVIVORSHIP_HAIRCUT - data.metrics.benchmark_cagr
           : null,
       breakeven_haircut_per_year: data.metrics.excess_cagr,
+      point_in_time_membership: data.meta.point_in_time ?? null,
     },
     period: data.period,
     config: data.config,
@@ -227,7 +230,10 @@ export function BacktestView({ settings }: { settings: Settings }) {
   );
 }
 
-function RealityCheck({ metrics }: { metrics: Metrics }) {
+function RealityCheck({ data }: { data: BacktestResponse }) {
+  const metrics = data.metrics;
+  const pit = data.meta.point_in_time;
+  const pitApplied = pit?.applied === true;
   const [haircut, setHaircut] = useState(DEFAULT_SURVIVORSHIP_HAIRCUT);
   const { cagr, benchmark_cagr: spy, excess_cagr: excess } = metrics;
   if (cagr == null || spy == null || excess == null) return null;
@@ -272,6 +278,26 @@ function RealityCheck({ metrics }: { metrics: Metrics }) {
         <div className="card-title">현실 기대치 · 생존편향 할인</div>
         <span className="text-[11px] font-medium text-faint">해석 도구 · 측정값 아님</span>
       </div>
+
+      {pitApplied ? (
+        <div className="mb-3 flex items-start gap-2 rounded-xl border border-up/30 bg-up/10 p-3">
+          <span className="text-sm">✓</span>
+          <p className="text-[11px] leading-relaxed text-fg">
+            <b className="text-up">시점별 구성종목 적용</b> ({pit?.coverage}) · 각 리밸런싱에 그
+            시점 S&P500 종목만 후보로 써서 <b>‘미래 승자 선취’(편입 전 종목 매수)</b>를
+            제거했습니다. 남은 한계: 상장폐지된 과거 종목은 무료 데이터에 가격이 없어{" "}
+            <b>‘패자 누락’</b>은 여전히 결과를 다소 부풀릴 수 있습니다.
+          </p>
+        </div>
+      ) : (
+        <div className="mb-3 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn/10 p-3">
+          <IconAlert className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+          <p className="text-[11px] leading-relaxed text-fg">
+            시점별 구성종목 <b className="text-warn">미적용</b> — 오늘의 구성종목으로 과거를
+            평가 중입니다(생존편향 큼). {pit?.note}
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2 text-sm">
@@ -463,7 +489,7 @@ function Tearsheet({ data }: { data: BacktestResponse }) {
       </div>
 
       {/* Reality check: temper the headline number against survivorship bias */}
-      <RealityCheck metrics={m} />
+      <RealityCheck data={data} />
 
       {/* Hero: cumulative performance + underwater drawdown, shared axis */}
       <Card>

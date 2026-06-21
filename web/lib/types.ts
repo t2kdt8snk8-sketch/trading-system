@@ -11,6 +11,12 @@ export interface DataMeta {
     missing_tickers?: string[];
     extreme_moves?: Record<string, number>;
   };
+  point_in_time?: {
+    enabled: boolean;
+    applied?: boolean;
+    coverage?: string;
+    note?: string;
+  };
   warnings: string[];
 }
 

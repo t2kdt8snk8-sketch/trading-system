@@ -37,6 +37,11 @@ class Config:
     trend_gate: bool = False
     trend_ma_days: int = 200
     rebalance: str = "M"
+    # Restrict each rebalance to the stocks actually in the index on that date
+    # (point-in-time membership), instead of today's constituents. Curbs the
+    # biggest survivorship/look-ahead inflation: buying future index members
+    # (e.g. TSLA pre-2020) before they were ever in the S&P 500.
+    point_in_time: bool = True
     slippage_bps: float = 7.5
     commission_bps: float = 0.0
     oos_split_date: str = "2021-01-01"

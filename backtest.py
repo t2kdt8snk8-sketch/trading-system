@@ -1,6 +1,7 @@
 """Backtesting engine with costs, OOS helpers, and gate checks."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -64,8 +65,15 @@ def run_backtest(
     cfg: Config,
     start: str,
     end: str,
+    universe_asof: Callable[[pd.Timestamp], frozenset | None] | None = None,
 ) -> BacktestResult:
-    """Run monthly rebalance; signal uses data through t, execution starts t+1 open."""
+    """Run monthly rebalance; signal uses data through t, execution starts t+1 open.
+
+    ``universe_asof`` optionally returns the index members eligible at each
+    rebalance date (point-in-time), so the strategy can't hold a stock before it
+    was actually in the index. Dates where it yields too few names fall back to
+    the full available universe rather than trade an unrealistically thin set.
+    """
     close = _as_price_frame(prices, "Close")
     open_px = _as_price_frame(prices, "Open")
     common_index = close.index.intersection(open_px.index).sort_values()
@@ -94,6 +102,12 @@ def run_backtest(
             continue
 
         history = close.loc[:rebal_date]
+        if universe_asof is not None:
+            members = universe_asof(rebal_date)
+            if members:
+                eligible = [c for c in history.columns if c in members]
+                if len(eligible) >= cfg.top_n:
+                    history = history[eligible]
         portfolio = build_portfolio(history, sectors, cfg)
         new_weights = portfolio["weight"].copy()
         all_tickers = old_weights.index.union(new_weights.index)
