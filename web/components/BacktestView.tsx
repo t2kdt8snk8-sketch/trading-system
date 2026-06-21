@@ -223,28 +223,31 @@ function Tearsheet({ data }: { data: BacktestResponse }) {
     net: t.net_return,
   }));
 
-  // Radar: strategy vs SPY, normalized so the better side ≈ 1.0 per axis.
-  const hb = (a?: number | null, b?: number | null) => {
-    const x = a ?? 0,
-      y = b ?? 0;
-    const d = Math.max(x, y, 1e-9);
-    return [Math.max(0, x / d), Math.max(0, y / d)] as const;
-  };
-  const lb = (a?: number | null, b?: number | null) => {
-    const x = Math.abs(a ?? 0),
-      y = Math.abs(b ?? 0);
-    const best = Math.min(x, y) || 1e-9;
-    return [best / (x || 1e-9), best / (y || 1e-9)] as const;
-  };
-  const [cagrS, cagrB] = hb(m.cagr, m.benchmark_cagr);
-  const [shS, shB] = hb(m.sharpe, m.benchmark_sharpe);
-  const [mddS, mddB] = lb(m.mdd, m.benchmark_mdd);
-  const [volS, volB] = lb(m.volatility, m.benchmark_volatility);
+  // Radar: strategy vs SPY on an ABSOLUTE 0–1 scale per axis (higher = better),
+  // so the polygon reflects real magnitude instead of pinning the winner to the rim.
+  // Fixed reference ranges: CAGR 0→30%, Sharpe 0→2, MDD 0→-50%, Vol 0→40%.
+  const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
   const radarAxes = [
-    { metric: "수익", strat: cagrS, bench: cagrB },
-    { metric: "샤프", strat: shS, bench: shB },
-    { metric: "방어", strat: mddS, bench: mddB },
-    { metric: "안정", strat: volS, bench: volB },
+    {
+      metric: "수익",
+      strat: clamp01((m.cagr ?? 0) / 0.3),
+      bench: clamp01((m.benchmark_cagr ?? 0) / 0.3),
+    },
+    {
+      metric: "샤프",
+      strat: clamp01((m.sharpe ?? 0) / 2),
+      bench: clamp01((m.benchmark_sharpe ?? 0) / 2),
+    },
+    {
+      metric: "방어",
+      strat: clamp01(1 - Math.abs(m.mdd ?? 0) / 0.5),
+      bench: clamp01(1 - Math.abs(m.benchmark_mdd ?? 0) / 0.5),
+    },
+    {
+      metric: "안정",
+      strat: clamp01(1 - (m.volatility ?? 0) / 0.4),
+      bench: clamp01(1 - (m.benchmark_volatility ?? 0) / 0.4),
+    },
   ];
 
   return (

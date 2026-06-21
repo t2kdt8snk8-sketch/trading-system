@@ -25,7 +25,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   mode: "live",
-  maxTickers: 80,
+  maxTickers: null, // 전체 S&P500 — 부분집합은 섹터 중립이 깨져 결과가 왜곡됨
   start: "2012-01-01",
   end: null,
   config: {

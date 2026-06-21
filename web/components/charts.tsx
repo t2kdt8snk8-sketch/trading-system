@@ -11,6 +11,7 @@ import {
   PieChart,
   PolarAngleAxis,
   PolarGrid,
+  PolarRadiusAxis,
   Radar,
   RadarChart,
   RadialBar,
@@ -270,6 +271,7 @@ export function RiskRadar({
           dataKey="metric"
           tick={{ fill: "#94a0b0", fontSize: 11 }}
         />
+        <PolarRadiusAxis domain={[0, 1]} tick={false} axisLine={false} />
         <Radar
           name="SPY"
           dataKey="bench"
@@ -288,7 +290,7 @@ export function RiskRadar({
         />
         <Tooltip
           contentStyle={tooltipStyle}
-          formatter={(v: number, n: string) => [`${(v * 100).toFixed(0)}`, n]}
+          formatter={(v: number, n: string) => [`${(v * 100).toFixed(0)}/100`, n]}
         />
       </RadarChart>
     </ResponsiveContainer>
