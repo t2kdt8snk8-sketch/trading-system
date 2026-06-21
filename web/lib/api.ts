@@ -32,18 +32,42 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     data = text;
   }
   if (!res.ok) {
-    const detail = (data as { detail?: unknown })?.detail ?? data;
-    const msg = extractMessage(detail) || `요청 실패 (HTTP ${res.status})`;
-    throw new ApiError(msg, detail);
+    const rawDetail = (data as { detail?: unknown })?.detail ?? data;
+    const msg = extractMessage(rawDetail) || `요청 실패 (HTTP ${res.status})`;
+    throw new ApiError(msg, sanitizeErrorDetail(rawDetail));
   }
   return data as T;
 }
 
+function looksLikeHtmlError(text: string): boolean {
+  const t = text.slice(0, 500).toLowerCase();
+  return t.includes("<!doctype html") || t.includes("<html") || t.includes("<title>502</title>");
+}
+
+function truncateText(text: string, max = 1000): string {
+  return text.length > max ? `${text.slice(0, max)}… [긴 에러 원문 생략]` : text;
+}
+
+function sanitizeErrorDetail(detail: unknown): unknown {
+  if (typeof detail === "string") {
+    if (looksLikeHtmlError(detail)) {
+      return "서버가 HTML 에러 페이지를 반환했습니다. Render 배포/재시작 중 잠깐 502가 난 것으로 보입니다.";
+    }
+    return truncateText(detail);
+  }
+  return detail;
+}
+
 function extractMessage(detail: unknown): string | null {
   if (!detail) return null;
-  if (typeof detail === "string") return detail;
+  if (typeof detail === "string") {
+    if (looksLikeHtmlError(detail)) {
+      return "Render 서버가 잠깐 502를 반환했습니다. 잠시 뒤 다시 시도하세요.";
+    }
+    return truncateText(detail, 180);
+  }
   if (typeof detail === "object" && detail !== null && "error" in detail) {
-    return String((detail as { error: unknown }).error);
+    return truncateText(String((detail as { error: unknown }).error), 180);
   }
   return null;
 }

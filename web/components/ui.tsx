@@ -83,6 +83,15 @@ export function ErrorBanner({ error }: { error: unknown }) {
   const msg = error instanceof Error ? error.message : String(error);
   const detail =
     error instanceof ApiError && error.detail ? error.detail : null;
+  const detailText = detail
+    ? typeof detail === "string"
+      ? detail
+      : JSON.stringify(detail, null, 2)
+    : null;
+  const safeDetailText =
+    detailText && detailText.length > 1000
+      ? `${detailText.slice(0, 1000)}… [긴 에러 원문 생략]`
+      : detailText;
   return (
     <div className="animate-fade-up rounded-2xl border border-down/40 bg-down/10 p-4">
       <div className="flex items-center gap-2 font-semibold text-down">
@@ -90,11 +99,9 @@ export function ErrorBanner({ error }: { error: unknown }) {
         요청 실패
       </div>
       <p className="mt-1.5 text-sm text-rose-200">{msg}</p>
-      {detail ? (
+      {safeDetailText ? (
         <pre className="mt-3 max-h-48 overflow-auto rounded-xl bg-bg/70 p-3 text-xs text-muted">
-          {typeof detail === "string"
-            ? detail
-            : JSON.stringify(detail, null, 2)}
+          {safeDetailText}
         </pre>
       ) : null}
     </div>
