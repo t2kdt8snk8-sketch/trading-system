@@ -88,6 +88,29 @@ def _extract_field(data: pd.DataFrame, field: str, tickers: list[str]) -> pd.Dat
     return out.sort_index()
 
 
+# yfinance downloads every requested ticker into one big frame. Pulling 500 at
+# once spikes memory past a 512MB free-tier limit (the worker is OOM-killed and
+# the platform serves a 502). Fetch in batches so peak memory stays flat.
+DOWNLOAD_CHUNK = 50
+
+
+def _download_in_chunks(
+    tickers: list[str], start: str, end: str, fields: tuple[str, ...]
+) -> dict[str, pd.DataFrame]:
+    """Download in ticker batches, keeping only the requested fields per batch."""
+    parts: dict[str, list[pd.DataFrame]] = {field: [] for field in fields}
+    for i in range(0, len(tickers), DOWNLOAD_CHUNK):
+        batch = tickers[i : i + DOWNLOAD_CHUNK]
+        raw = _download_yfinance(batch, start, end)
+        for field in fields:
+            parts[field].append(_extract_field(raw, field, batch))
+        del raw  # free each batch before fetching the next one
+    return {
+        field: pd.concat(chunks, axis=1).sort_index() if chunks else pd.DataFrame()
+        for field, chunks in parts.items()
+    }
+
+
 def get_ohlcv(
     tickers: list[str],
     start: str,
@@ -117,9 +140,7 @@ def get_ohlcv(
             for field, path in cached_files.items()
         }
 
-    raw = _download_yfinance(clean_tickers, start, end)
-    frames = {field: _extract_field(raw, field, clean_tickers) for field in fields}
-    del raw  # release the large intermediate frame before returning/caching
+    frames = _download_in_chunks(clean_tickers, start, end, fields)
     for field, frame in frames.items():
         frame.to_csv(cached_files[field])
     return frames

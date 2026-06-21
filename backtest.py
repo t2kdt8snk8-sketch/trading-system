@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -236,6 +235,8 @@ def passes_gate(metrics: dict[str, Any], oos_metrics: dict[str, Any], cfg: Confi
 
 def save_equity_plot(equity_curve: pd.Series, benchmark: pd.Series, path: str | Path) -> None:
     """Save equity-vs-benchmark plot to path."""
+    import matplotlib.pyplot as plt  # lazy: the API never plots, keep it off the hot path
+
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     bench = benchmark.reindex(equity_curve.index).ffill()
