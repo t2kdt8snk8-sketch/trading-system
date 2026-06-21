@@ -52,6 +52,20 @@ def _load_live(cfg: Any, start: str, end: str, max_tickers: int | None) -> Marke
     # free-tier memory ceiling. Price math is ratio-based, so f32 precision is fine.
     ohlcv = {field: frame.astype("float32") for field, frame in ohlcv.items()}
 
+    # Drop tickers Yahoo returned no usable data for at all (bad/renamed symbols
+    # from the Wikipedia table, or failed fetches — e.g. ALB/FDXF/Q showing up
+    # 100% NaN). They can never be selected anyway, but leaving them in pollutes
+    # the universe count and the quality report. Partial-history names (recent
+    # listings) are kept — the factor code already ignores their NaN stretch.
+    close = ohlcv["Close"]
+    dropped_no_data = [
+        col for col in close.columns
+        if col != BENCHMARK and int(close[col].notna().sum()) == 0
+    ]
+    if dropped_no_data:
+        ohlcv = {field: frame.drop(columns=dropped_no_data, errors="ignore") for field, frame in ohlcv.items()}
+        tickers = [t for t in tickers if t not in dropped_no_data]
+
     sectors = pd.Series(
         universe.set_index("ticker")["sector"].to_dict(), name="sector"
     )
@@ -65,9 +79,15 @@ def _load_live(cfg: Any, start: str, end: str, max_tickers: int | None) -> Marke
         "is_demo": False,
         "source": "yfinance + Wikipedia GICS",
         "universe_requested": len(tickers),
+        "dropped_no_data": dropped_no_data,
         "validate": report,
         "warnings": [],
     }
+    if dropped_no_data:
+        meta["warnings"].append(
+            f"데이터가 전혀 없는 종목 {len(dropped_no_data)}개 제외: {', '.join(dropped_no_data[:8])}"
+            + ("…" if len(dropped_no_data) > 8 else "")
+        )
     if report.get("coverage_ratio", 1.0) < 0.9:
         meta["warnings"].append(
             f"데이터 커버리지 {report['coverage_ratio']:.0%} — 요청 종목 중 일부를 못 받았습니다."
