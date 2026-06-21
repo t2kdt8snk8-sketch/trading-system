@@ -82,8 +82,19 @@ async function get<T>(path: string): Promise<T> {
       String(e),
     );
   }
-  if (!res.ok) throw new ApiError(`요청 실패 (HTTP ${res.status})`, null);
-  return (await res.json()) as T;
+  const text = await res.text();
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  if (!res.ok) {
+    const rawDetail = (data as { detail?: unknown })?.detail ?? data;
+    const msg = extractMessage(rawDetail) || `요청 실패 (HTTP ${res.status})`;
+    throw new ApiError(msg, sanitizeErrorDetail(rawDetail));
+  }
+  return data as T;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -117,7 +128,17 @@ function getActiveBacktestJob(): string | null {
   return window.localStorage.getItem(ACTIVE_BACKTEST_JOB_KEY);
 }
 
-async function pollBacktestJob(jobId: string): Promise<BacktestResponse> {
+function isMissingJobError(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  const msg = error.message.toLowerCase();
+  const detail = typeof error.detail === "string" ? error.detail.toLowerCase() : "";
+  return msg.includes("job not found") || detail.includes("job not found") || msg.includes("http 404");
+}
+
+async function pollBacktestJob(
+  jobId: string,
+  options: { staleOk?: boolean } = {},
+): Promise<BacktestResponse | null> {
   let transientFailures = 0;
   for (let i = 0; i < 360; i += 1) {
     await sleep(1500);
@@ -134,6 +155,14 @@ async function pollBacktestJob(jobId: string): Promise<BacktestResponse> {
         throw new ApiError(msg, job.error);
       }
     } catch (e) {
+      if (isMissingJobError(e)) {
+        clearActiveBacktestJob(jobId);
+        if (options.staleOk) return null;
+        throw new ApiError(
+          "백테스트 작업을 찾지 못했습니다. 다시 실행하세요.",
+          "job not found",
+        );
+      }
       if (e instanceof ApiError && typeof e.detail !== "string") throw e;
       transientFailures += 1;
       if (transientFailures >= 40) throw e;
@@ -152,7 +181,11 @@ async function runBacktestJob(o: RunOptions): Promise<BacktestResponse> {
     end: o.end,
   });
   saveActiveBacktestJob(started.job_id);
-  return pollBacktestJob(started.job_id);
+  const result = await pollBacktestJob(started.job_id);
+  if (!result) {
+    throw new ApiError("백테스트 작업이 사라졌습니다. 다시 실행하세요.", "job not found");
+  }
+  return result;
 }
 
 export interface RunOptions {
@@ -175,7 +208,7 @@ export const api = {
   backtest: (o: RunOptions) => runBacktestJob(o),
   resumeBacktest: () => {
     const jobId = getActiveBacktestJob();
-    return jobId ? pollBacktestJob(jobId) : null;
+    return jobId ? pollBacktestJob(jobId, { staleOk: true }) : null;
   },
   compare: (o: RunOptions & { variants: Record<string, unknown>[] }) =>
     post<CompareResponse>("/api/compare", {

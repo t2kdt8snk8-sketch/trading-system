@@ -135,17 +135,13 @@ export function BacktestView({ settings }: { settings: Settings }) {
     const resume = api.resumeBacktest();
     if (!resume) return;
 
-    setLoading(true);
     setError(null);
     resume
       .then((res) => {
-        if (!cancelled) setData(res);
+        if (!cancelled && res) setData(res);
       })
       .catch((e) => {
         if (!cancelled) setError(e);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
 
     return () => {
