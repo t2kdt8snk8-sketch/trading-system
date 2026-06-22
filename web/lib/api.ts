@@ -213,6 +213,36 @@ async function runBacktestJob(o: RunOptions): Promise<BacktestResponse> {
   );
 }
 
+// Generic job poller for OOS / compare (which run several backtests and would
+// otherwise time out as one synchronous request on free-tier hosts).
+async function pollJob<T>(jobId: string): Promise<T> {
+  let transientFailures = 0;
+  for (let i = 0; i < 360; i += 1) {
+    await sleep(1500);
+    try {
+      const job = await get<JobResponse<T>>(`/api/jobs/${jobId}`);
+      transientFailures = 0;
+      if (job.status === "done" && job.result) return job.result;
+      if (job.status === "error") {
+        throw new ApiError(extractMessage(job.error) || "작업 실패", job.error);
+      }
+    } catch (e) {
+      if (isMissingJobError(e)) {
+        throw new ApiError("작업을 찾지 못했습니다. 다시 실행하세요.", "job not found");
+      }
+      if (e instanceof ApiError && typeof e.detail !== "string") throw e;
+      transientFailures += 1;
+      if (transientFailures >= 40) throw e;
+    }
+  }
+  throw new ApiError("작업 시간이 너무 오래 걸립니다. 잠시 뒤 다시 시도하세요.", null);
+}
+
+async function runJob<T>(startPath: string, body: unknown): Promise<T> {
+  const started = await post<{ job_id: string }>(startPath, body);
+  return pollJob<T>(started.job_id);
+}
+
 export interface RunOptions {
   config?: Record<string, unknown>;
   mode: string;
@@ -236,7 +266,7 @@ export const api = {
     return jobId ? pollBacktestJob(jobId, { staleOk: true }) : null;
   },
   compare: (o: RunOptions & { variants: Record<string, unknown>[] }) =>
-    post<CompareResponse>("/api/compare", {
+    runJob<CompareResponse>("/api/compare/jobs", {
       config: o.config,
       variants: o.variants,
       mode: o.mode,
@@ -245,7 +275,7 @@ export const api = {
       end: o.end,
     }),
   oos: (o: RunOptions) =>
-    post<OosResponse>("/api/oos", {
+    runJob<OosResponse>("/api/oos/jobs", {
       config: o.config,
       mode: o.mode,
       max_tickers: o.max_tickers,

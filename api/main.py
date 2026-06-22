@@ -127,17 +127,10 @@ def _trim_jobs() -> None:
         _delete_job_file(job_id)
 
 
-def _run_backtest_job(job_id: str, req: BacktestRequest) -> None:
+def _run_job(job_id: str, fn) -> None:
     _set_job(job_id, status="running")
     try:
-        result = pipeline.run_backtest_ep(
-            req.config,
-            req.start,
-            req.end,
-            mode=req.mode,
-            max_tickers=req.max_tickers,
-        )
-        _set_job(job_id, status="done", result=result)
+        _set_job(job_id, status="done", result=fn())
     except Exception as exc:  # noqa: BLE001 — preserve visible failure for polling UI
         _set_job(
             job_id,
@@ -148,6 +141,23 @@ def _run_backtest_job(job_id: str, req: BacktestRequest) -> None:
                 "trace": traceback.format_exc().splitlines()[-6:],
             },
         )
+
+
+def _start_job(kind: str, fn, background_tasks: BackgroundTasks) -> dict[str, str]:
+    """Create a pollable job so the browser polls instead of holding one long
+    request (which times out / drops the connection on free-tier hosts)."""
+    _trim_jobs()
+    job_id = uuid.uuid4().hex
+    JOBS[job_id] = {
+        "id": job_id,
+        "kind": kind,
+        "status": "queued",
+        "created_at": _now(),
+        "updated_at": _now(),
+    }
+    _persist_job(JOBS[job_id])
+    background_tasks.add_task(_run_job, job_id, fn)
+    return {"job_id": job_id, "status": "queued"}
 
 
 def _guard(fn, *args, **kwargs):
@@ -200,18 +210,37 @@ def post_backtest(req: BacktestRequest) -> dict[str, Any]:
 @app.post("/api/backtest/jobs")
 def start_backtest_job(req: BacktestRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
     """Start a long backtest and let the browser poll instead of holding one request."""
-    _trim_jobs()
-    job_id = uuid.uuid4().hex
-    JOBS[job_id] = {
-        "id": job_id,
-        "kind": "backtest",
-        "status": "queued",
-        "created_at": _now(),
-        "updated_at": _now(),
-    }
-    _persist_job(JOBS[job_id])
-    background_tasks.add_task(_run_backtest_job, job_id, req)
-    return {"job_id": job_id, "status": "queued"}
+    return _start_job(
+        "backtest",
+        lambda: pipeline.run_backtest_ep(
+            req.config, req.start, req.end, mode=req.mode, max_tickers=req.max_tickers
+        ),
+        background_tasks,
+    )
+
+
+@app.post("/api/oos/jobs")
+def start_oos_job(req: OosRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
+    """OOS runs two backtests; poll it like a backtest so it can't time out."""
+    return _start_job(
+        "oos",
+        lambda: pipeline.run_oos_ep(
+            req.config, req.start, req.end, mode=req.mode, max_tickers=req.max_tickers
+        ),
+        background_tasks,
+    )
+
+
+@app.post("/api/compare/jobs")
+def start_compare_job(req: CompareRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
+    """Compare runs several backtests; poll it like a backtest so it can't time out."""
+    return _start_job(
+        "compare",
+        lambda: pipeline.run_compare_ep(
+            req.config, req.variants, req.start, req.end, mode=req.mode, max_tickers=req.max_tickers
+        ),
+        background_tasks,
+    )
 
 
 @app.get("/api/jobs/{job_id}")
