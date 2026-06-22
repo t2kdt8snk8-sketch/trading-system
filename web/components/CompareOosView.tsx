@@ -21,6 +21,54 @@ import {
 import { GateVerdict } from "./GateVerdict";
 import { IconScale } from "./icons";
 
+function safeFilePart(value: string) {
+  return value.replace(/[^a-zA-Z0-9가-힣_.-]+/g, "-").replace(/-+/g, "-");
+}
+
+function downloadTextFile(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function buildOosAiJson(data: OosResponse) {
+  return {
+    schema: "trading-system.oos.ai-export.v1",
+    generated_at: new Date().toISOString(),
+    intended_use:
+      "Send this JSON to an AI assistant for out-of-sample review. Numeric returns are decimals, not percent strings.",
+    warnings_for_ai: [
+      "OOS is the unseen-period re-test — treat it as the primary validation, above any backtest.",
+      data.meta.point_in_time?.applied
+        ? "Point-in-time S&P 500 membership WAS applied. Residual survivorship bias remains from delisted losers whose prices are absent in the free data."
+        : "Survivorship bias is LARGE here: today's S&P 500 constituents were used (point-in-time membership not applied).",
+      "Do not tune the strategy against this OOS period; doing so consumes it and re-introduces overfitting.",
+    ],
+    split_date: data.split_date,
+    passes_gate: data.passes_gate,
+    config: data.config,
+    development: { metrics: data.development, checks: data.dev_checks },
+    oos: { metrics: data.oos, checks: data.oos_checks },
+    oos_consumed_warning: data.oos_consumed_warning,
+    data_meta: data.meta,
+  };
+}
+
+function exportOos(data: OosResponse) {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  downloadTextFile(
+    `oos-ai-export-${safeFilePart(data.split_date)}-${stamp}.json`,
+    JSON.stringify(buildOosAiJson(data), null, 2),
+    "application/json;charset=utf-8",
+  );
+}
+
 const AXES: Record<
   string,
   { label: string; variants: { label: string; v: Record<string, unknown> }[] }
@@ -255,6 +303,24 @@ function OosSection({ settings }: { settings: Settings }) {
           <div className="rounded-2xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm font-semibold text-warn">
             🔒 {data.oos_consumed_warning}
           </div>
+
+          <Card>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="card-title">AI 분석용 내보내기</div>
+                <p className="mt-1 text-sm font-medium leading-relaxed text-muted">
+                  개발/OOS 성과·게이트·설정·데이터 출처를 구조화 JSON으로 저장합니다. 다른 AI에게 그대로 보내 검토받기 좋습니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary justify-center sm:shrink-0"
+                onClick={() => exportOos(data)}
+              >
+                AI JSON 저장
+              </button>
+            </div>
+          </Card>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <SplitCard

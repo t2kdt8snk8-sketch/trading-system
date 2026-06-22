@@ -206,11 +206,14 @@ def run_compare_ep(
     base_cfg = config_from_overrides(base_overrides)
     end = end or today_str()
     data = _load_with_warmup(base_cfg, start, end, mode, max_tickers)
+    universe_asof = _point_in_time_resolver(base_cfg, mode, data.meta)
 
     rows = []
     for i, variant in enumerate(variants):
         cfg = Config(**{**base_cfg.__dict__, **variant})
-        result = run_backtest(data.ohlcv, data.sectors, cfg, start=start, end=end)
+        result = run_backtest(
+            data.ohlcv, data.sectors, cfg, start=start, end=end, universe_asof=universe_asof
+        )
         metrics = _clean_metrics(result.metrics)
         rows.append({"variant": i, **variant, **metrics})
     return {
@@ -243,8 +246,13 @@ def run_oos_ep(
     dev_end = before[-1].date().isoformat()
     oos_start = after[0].date().isoformat()
 
-    dev_res = run_backtest(data.ohlcv, data.sectors, cfg, start=start, end=dev_end)
-    oos_res = run_backtest(data.ohlcv, data.sectors, cfg, start=oos_start, end=end)
+    universe_asof = _point_in_time_resolver(cfg, mode, data.meta)
+    dev_res = run_backtest(
+        data.ohlcv, data.sectors, cfg, start=start, end=dev_end, universe_asof=universe_asof
+    )
+    oos_res = run_backtest(
+        data.ohlcv, data.sectors, cfg, start=oos_start, end=end, universe_asof=universe_asof
+    )
     dev = _clean_metrics(dev_res.metrics)
     oos = _clean_metrics(oos_res.metrics)
     gate = passes_gate(dev_res.metrics, oos_res.metrics, cfg)
