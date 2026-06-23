@@ -239,8 +239,21 @@ async function pollJob<T>(jobId: string): Promise<T> {
 }
 
 async function runJob<T>(startPath: string, body: unknown): Promise<T> {
-  const started = await post<{ job_id: string }>(startPath, body);
-  return pollJob<T>(started.job_id);
+  // If a server restart (e.g. a redeploy) loses the job mid-flight, start a
+  // fresh one once instead of surfacing a bare "job not found".
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const started = await post<{ job_id: string }>(startPath, body);
+    try {
+      return await pollJob<T>(started.job_id);
+    } catch (e) {
+      if (isMissingJobError(e) && attempt === 0) {
+        await sleep(1500);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new ApiError("서버가 재시작되어 작업이 사라졌습니다. 잠시 뒤 다시 시도하세요.", null);
 }
 
 export interface RunOptions {
