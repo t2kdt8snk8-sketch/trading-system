@@ -34,6 +34,8 @@ class Config:
     min_stocks_per_sector: int = 5
     top_n: int = 20
     weighting: str = "inverse_vol"
+    max_position_weight: float = 0.075
+    max_sector_weight: float = 0.25
     trend_gate: bool = False
     trend_ma_days: int = 200
     rebalance: str = "M"

@@ -14,6 +14,8 @@ export interface Settings {
     sector_neutral: boolean;
     trend_gate: boolean;
     weighting: string;
+    max_position_weight: number;
+    max_sector_weight: number;
     slippage_bps: number;
     commission_bps: number;
     oos_split_date: string;
@@ -34,6 +36,8 @@ export const DEFAULT_SETTINGS: Settings = {
     sector_neutral: true,
     trend_gate: false,
     weighting: "inverse_vol",
+    max_position_weight: 0.075,
+    max_sector_weight: 0.25,
     slippage_bps: 7.5,
     commission_bps: 0.0,
     oos_split_date: "2021-01-01",
@@ -154,6 +158,32 @@ export function SettingsSheet({
                 className="input"
                 value={s.config.top_n}
                 onChange={(e) => setCfg({ top_n: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="종목 최대 비중">
+              <input
+                type="number"
+                step="0.005"
+                min="0.01"
+                max="1"
+                className="input"
+                value={s.config.max_position_weight}
+                onChange={(e) =>
+                  setCfg({ max_position_weight: Number(e.target.value) })
+                }
+              />
+            </Field>
+            <Field label="섹터 최대 비중">
+              <input
+                type="number"
+                step="0.01"
+                min="0.05"
+                max="1"
+                className="input"
+                value={s.config.max_sector_weight}
+                onChange={(e) =>
+                  setCfg({ max_sector_weight: Number(e.target.value) })
+                }
               />
             </Field>
             <Field label="슬리피지 (bp/편)">

@@ -313,6 +313,8 @@ def config_meta() -> dict[str, Any]:
             "sector_neutral",
             "trend_gate",
             "weighting",
+            "max_position_weight",
+            "max_sector_weight",
             "slippage_bps",
             "commission_bps",
             "oos_split_date",

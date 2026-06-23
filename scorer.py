@@ -54,6 +54,78 @@ def inverse_vol_weights(selected: pd.Index, vol: pd.Series) -> pd.Series:
     return weights
 
 
+def _cap_and_redistribute(
+    weights: pd.Series,
+    position_cap: float | None,
+    sectors: pd.Series | None = None,
+    sector_cap: float | None = None,
+) -> pd.Series:
+    """Apply position/sector caps and redistribute leftover weight.
+
+    If a cap is impossible for a small selected universe, relax it only to the
+    minimum feasible level so tests and small demo runs can still sum to 100%.
+    """
+    capped = weights.astype("float64").copy()
+    capped = capped / capped.sum()
+    if capped.empty:
+        return capped
+
+    if position_cap is not None and np.isfinite(position_cap) and position_cap > 0:
+        position_cap = max(float(position_cap), 1.0 / len(capped))
+    else:
+        position_cap = None
+
+    sector_map = sectors.reindex(capped.index).fillna("Unknown") if sectors is not None else None
+    if sector_cap is not None and np.isfinite(sector_cap) and sector_cap > 0 and sector_map is not None:
+        sector_cap = max(float(sector_cap), 1.0 / max(int(sector_map.nunique()), 1))
+    else:
+        sector_cap = None
+
+    for _ in range(len(capped) * 4):
+        before = capped.copy()
+
+        if position_cap is not None:
+            capped = capped.clip(upper=position_cap)
+
+        if sector_cap is not None and sector_map is not None:
+            for _, idx in sector_map.groupby(sector_map).groups.items():
+                sector_idx = pd.Index(idx)
+                total = float(capped.reindex(sector_idx).sum())
+                if total > sector_cap:
+                    capped.loc[sector_idx] *= sector_cap / total
+
+        residual = 1.0 - float(capped.sum())
+        if residual <= 1e-12:
+            break
+
+        room = pd.Series(np.inf, index=capped.index, dtype="float64")
+        if position_cap is not None:
+            room = np.minimum(room, (position_cap - capped).clip(lower=0.0))
+        if sector_cap is not None and sector_map is not None:
+            for _, idx in sector_map.groupby(sector_map).groups.items():
+                sector_idx = pd.Index(idx)
+                sector_room = max(sector_cap - float(capped.reindex(sector_idx).sum()), 0.0)
+                room.loc[sector_idx] = np.minimum(room.loc[sector_idx], sector_room)
+
+        candidates = room > 1e-12
+        if not candidates.any():
+            break
+
+        base = weights.reindex(capped.index).where(candidates, 0.0).clip(lower=0.0)
+        if base.sum() <= 0:
+            base = pd.Series(1.0, index=capped.index).where(candidates, 0.0)
+        add = residual * base / base.sum()
+        add = np.minimum(add, room).fillna(0.0)
+        capped = capped + add
+
+        if (capped - before).abs().max() < 1e-12:
+            break
+
+    capped = capped / capped.sum()
+    capped.name = "weight"
+    return capped
+
+
 def rank_and_select(scores: pd.Series, top_n: int, trend_ok: pd.Series | None = None) -> pd.Index:
     """Return top_n tickers by score, optionally filtered by trend gate."""
     eligible = scores.dropna()
@@ -86,6 +158,12 @@ def build_portfolio(prices: pd.DataFrame, sectors: pd.Series, cfg: Any) -> pd.Da
         weights = inverse_vol_weights(selected, vol)
     else:
         weights = pd.Series(1 / len(selected), index=selected)
+    weights = _cap_and_redistribute(
+        weights,
+        getattr(cfg, "max_position_weight", None),
+        sectors=sectors,
+        sector_cap=getattr(cfg, "max_sector_weight", None),
+    )
     portfolio = pd.DataFrame(
         {
             "score": scores.reindex(weights.index),

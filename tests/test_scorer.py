@@ -43,3 +43,34 @@ def test_build_portfolio_outputs_weights_and_sectors() -> None:
     assert len(portfolio) == 4
     assert abs(portfolio["weight"].sum() - 1.0) < 1e-12
     assert set(portfolio.columns) == {"score", "weight", "sector"}
+
+
+def test_build_portfolio_caps_position_and_sector_weights() -> None:
+    idx = pd.date_range("2023-01-02", periods=320, freq="B")
+    prices = pd.DataFrame(
+        {
+            "A1": np.linspace(10, 40, len(idx)),
+            "A2": np.linspace(10, 35, len(idx)),
+            "A3": np.linspace(10, 30, len(idx)),
+            "B1": np.linspace(10, 28, len(idx)),
+            "B2": np.linspace(10, 26, len(idx)),
+            "B3": np.linspace(10, 24, len(idx)),
+            "C1": np.linspace(10, 22, len(idx)),
+            "C2": np.linspace(10, 21, len(idx)),
+            "C3": np.linspace(10, 20, len(idx)),
+        },
+        index=idx,
+    )
+    sectors = pd.Series({c: c[0] for c in prices.columns})
+    cfg = Config(
+        top_n=9,
+        min_stocks_per_sector=3,
+        max_position_weight=0.20,
+        max_sector_weight=0.40,
+    )
+
+    portfolio = build_portfolio(prices, sectors, cfg)
+
+    assert portfolio["weight"].max() <= 0.20 + 1e-12
+    assert portfolio.groupby("sector")["weight"].sum().max() <= 0.40 + 1e-12
+    assert abs(portfolio["weight"].sum() - 1.0) < 1e-12
