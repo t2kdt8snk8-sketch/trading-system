@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -94,21 +95,47 @@ def _extract_field(data: pd.DataFrame, field: str, tickers: list[str]) -> pd.Dat
 DOWNLOAD_CHUNK = 50
 
 
+def _download_batch(tickers: list[str], start: str, end: str, attempts: int = 3) -> pd.DataFrame | None:
+    """Download one batch, retrying transient failures (e.g. Yahoo rate-limits)
+    with backoff. Returns None if the batch can't be fetched after all attempts."""
+    for attempt in range(attempts):
+        try:
+            return _download_yfinance(tickers, start, end)
+        except Exception:  # noqa: BLE001 — transient network/rate-limit; retry then tolerate
+            if attempt < attempts - 1:
+                time.sleep(2 * (attempt + 1))
+    return None
+
+
 def _download_in_chunks(
     tickers: list[str], start: str, end: str, fields: tuple[str, ...]
-) -> dict[str, pd.DataFrame]:
-    """Download in ticker batches, keeping only the requested fields per batch."""
+) -> tuple[dict[str, pd.DataFrame], list[str]]:
+    """Download in ticker batches, keeping only the requested fields per batch.
+
+    One batch failing (a rate-limited empty response) must not sink the whole
+    run, so failed batches are retried and then tolerated — their tickers are
+    reported back as ``failed`` and simply omitted, rather than raising.
+    """
     parts: dict[str, list[pd.DataFrame]] = {field: [] for field in fields}
+    obtained: list[str] = []
+    failed: list[str] = []
     for i in range(0, len(tickers), DOWNLOAD_CHUNK):
         batch = tickers[i : i + DOWNLOAD_CHUNK]
-        raw = _download_yfinance(batch, start, end)
+        raw = _download_batch(batch, start, end)
+        if raw is None:
+            failed.extend(batch)
+            continue
         for field in fields:
             parts[field].append(_extract_field(raw, field, batch))
+        obtained.extend(batch)
         del raw  # free each batch before fetching the next one
-    return {
+    if not obtained:
+        raise ValueError("yfinance returned no data for any batch (likely rate-limited; try again shortly)")
+    frames = {
         field: pd.concat(chunks, axis=1).sort_index() if chunks else pd.DataFrame()
         for field, chunks in parts.items()
     }
+    return frames, failed
 
 
 def get_ohlcv(
@@ -140,9 +167,12 @@ def get_ohlcv(
             for field, path in cached_files.items()
         }
 
-    frames = _download_in_chunks(clean_tickers, start, end, fields)
-    for field, frame in frames.items():
-        frame.to_csv(cached_files[field])
+    frames, failed = _download_in_chunks(clean_tickers, start, end, fields)
+    # Only cache a complete download; a partial run (some batches rate-limited)
+    # shouldn't be frozen into the cache — let the next call retry the rest.
+    if not failed:
+        for field, frame in frames.items():
+            frame.to_csv(cached_files[field])
     return frames
 
 

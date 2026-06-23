@@ -39,6 +39,33 @@ def test_cache_hit_skips_download(monkeypatch, tmp_path) -> None:
     assert list(frames["Close"].columns) == ["AAA", "BBB"]
 
 
+def test_download_tolerates_failed_batch(monkeypatch, tmp_path) -> None:
+    """One rate-limited batch must not sink the whole download; it's skipped and
+    a partial result is returned but not cached."""
+    monkeypatch.setattr(adapter.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(adapter, "DOWNLOAD_CHUNK", 1)
+    dates = pd.date_range("2024-01-01", periods=3)
+
+    def fake_download(tickers, start, end):
+        if tickers[0] == "BBB":
+            raise ValueError("yfinance returned empty data")
+        cols = pd.MultiIndex.from_product(
+            [["Open", "High", "Low", "Close", "Volume"], tickers]
+        )
+        return pd.DataFrame(1.0, index=dates, columns=cols)
+
+    monkeypatch.setattr(adapter, "_download_yfinance", fake_download)
+    frames = adapter.get_ohlcv(
+        ["AAA", "BBB", "CCC"], "2024-01-01", "2024-01-05",
+        cache_dir=str(tmp_path), fields=("Open", "Close"),
+    )
+    assert set(frames) == {"Open", "Close"}
+    assert "AAA" in frames["Close"].columns and "CCC" in frames["Close"].columns
+    assert "BBB" not in frames["Close"].columns  # failed batch tolerated, not fatal
+    key = adapter._cache_key(["AAA", "BBB", "CCC"], "2024-01-01", "2024-01-05", "ohlcv")
+    assert not (tmp_path / f"{key}_close.csv").exists()  # partial download not cached
+
+
 def test_get_universe_parses_symbol_and_sector(monkeypatch) -> None:
     fake = pd.DataFrame({"Symbol": ["BRK.B", "AAPL"], "GICS Sector": ["Financials", "Information Technology"]})
     monkeypatch.setattr(adapter, "_read_html_with_headers", lambda url: [fake])
