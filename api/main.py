@@ -195,6 +195,17 @@ def post_portfolio(req: PortfolioRequest) -> dict[str, Any]:
     return _guard(pipeline.run_portfolio, req.config, mode=req.mode, max_tickers=req.max_tickers)
 
 
+@app.post("/api/portfolio/jobs")
+def start_portfolio_job(req: PortfolioRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
+    """Building today's portfolio downloads the full universe; poll it so the
+    request can't time out on free-tier hosts."""
+    return _start_job(
+        "portfolio",
+        lambda: pipeline.run_portfolio(req.config, mode=req.mode, max_tickers=req.max_tickers),
+        background_tasks,
+    )
+
+
 @app.post("/api/backtest")
 def post_backtest(req: BacktestRequest) -> dict[str, Any]:
     return _guard(

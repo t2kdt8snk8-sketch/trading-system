@@ -255,7 +255,7 @@ export const api = {
   base: BASE,
   configMeta: () => get<ConfigMeta>("/api/config"),
   portfolio: (o: RunOptions) =>
-    post<PortfolioResponse>("/api/portfolio", {
+    runJob<PortfolioResponse>("/api/portfolio/jobs", {
       config: o.config,
       mode: o.mode,
       max_tickers: o.max_tickers,
