@@ -20,6 +20,71 @@ import {
 import { SectorDonut, SECTOR_COLORS } from "./charts";
 import { IconWallet } from "./icons";
 
+function safeFilePart(value: string) {
+  return value.replace(/[^a-zA-Z0-9가-힣_.-]+/g, "-").replace(/-+/g, "-");
+}
+
+function downloadTextFile(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function csvCell(value: unknown) {
+  if (value == null) return "";
+  const s = String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function buildHoldingsCsv(data: PortfolioResponse) {
+  const header = ["rank", "ticker", "sector", "score", "weight_decimal"];
+  const rows = data.holdings.map((h, i) => [i + 1, h.ticker, h.sector ?? "", h.score, h.weight]);
+  return [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
+function buildPortfolioAiJson(data: PortfolioResponse) {
+  return {
+    schema: "trading-system.portfolio.ai-export.v1",
+    generated_at: new Date().toISOString(),
+    intended_use:
+      "Send this JSON to an AI assistant for review of today's target portfolio. Weights are decimals, not percent strings.",
+    warnings_for_ai: [
+      "This is a rule-based candidate list (risk-adjusted momentum), not personalized advice or a guaranteed buy signal.",
+      "Backtests of this rule were roughly market-like after removing survivorship bias; do not assume it beats the index.",
+      "Scores are relative rankings, NOT predicted returns.",
+    ],
+    as_of: data.as_of,
+    config: data.config,
+    holdings: data.holdings,
+    sector_weights: data.sector_weights,
+    data_meta: data.meta,
+  };
+}
+
+function exportPortfolio(data: PortfolioResponse, kind: "ai-json" | "holdings-csv") {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  const asOf = safeFilePart(data.as_of);
+  if (kind === "holdings-csv") {
+    downloadTextFile(
+      `portfolio-holdings-${asOf}-${stamp}.csv`,
+      buildHoldingsCsv(data),
+      "text/csv;charset=utf-8",
+    );
+    return;
+  }
+  downloadTextFile(
+    `portfolio-ai-export-${asOf}-${stamp}.json`,
+    JSON.stringify(buildPortfolioAiJson(data), null, 2),
+    "application/json;charset=utf-8",
+  );
+}
+
 export function PortfolioView({ settings }: { settings: Settings }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -85,6 +150,33 @@ export function PortfolioView({ settings }: { settings: Settings }) {
             입니다. 기준일은 <b>{data.as_of}</b>.
           </SummaryCard>
           <DataQuality meta={data.meta} />
+
+          <Card>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="card-title">내보내기</div>
+                <p className="mt-1 text-sm font-medium leading-relaxed text-muted">
+                  오늘의 종목·비중·점수를 저장합니다. CSV는 증권사·엑셀에 넣기 좋고, AI JSON은 다른 AI에게 검토받기 좋습니다.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+                <button
+                  type="button"
+                  className="btn btn-secondary justify-center"
+                  onClick={() => exportPortfolio(data, "ai-json")}
+                >
+                  AI JSON 저장
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary justify-center"
+                  onClick={() => exportPortfolio(data, "holdings-csv")}
+                >
+                  CSV 저장
+                </button>
+              </div>
+            </div>
+          </Card>
 
           <div className="grid gap-4 lg:grid-cols-3">
             <Card className="lg:col-span-2">
